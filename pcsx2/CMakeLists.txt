@@ -66,7 +66,7 @@ set(pcsx2Sources
 	IopIrq.cpp
 	IopMem.cpp
 	IopSio2.cpp
-#	Mdec.cpp
+	Mdec.cpp
 	Memory.cpp
 	MMI.cpp
 	MTGS.cpp
@@ -137,7 +137,7 @@ set(pcsx2Headers
 	IopHw.h
 	IopMem.h
 	IopSio2.h
-#	Mdec.h
+	Mdec.h
 	MTVU.h
 	Memory.h
 	MemoryTypes.h
@@ -150,7 +150,6 @@ set(pcsx2Headers
 	R5900Exceptions.h
 	R5900.h
 	R5900OpcodeTables.h
-	SamplProf.h
 	SaveState.h
 	Sifcmd.h
 	Sif.h
@@ -301,7 +300,6 @@ set(pcsx2GuiSources
 	gui/Panels/PluginSelectorPanel.cpp
 	gui/Panels/SpeedhacksPanel.cpp
 	gui/Panels/VideoPanel.cpp
-	gui/pxLogTextCtrl.cpp
 	gui/RecentIsoList.cpp
 	gui/Saveslots.cpp
 	gui/SysState.cpp
@@ -410,6 +408,7 @@ set(pcsx2LinuxHeaders
 # ps2 sources
 set(pcsx2ps2Sources
 	ps2/BiosTools.cpp
+	ps2/pgif.cpp
 	ps2/LegacyDmac.cpp
 	ps2/Iop/IopHwRead.cpp
 	ps2/Iop/IopHwWrite.cpp)
@@ -418,6 +417,7 @@ set(pcsx2ps2Sources
 set(pcsx2ps2Headers
 	ps2/BiosTools.h
 	ps2/eeHwTraceLog.inl
+	ps2/pgif.h
 	ps2/HwInternal.h
 	ps2/Iop/IopHw_Internal.h)
 
@@ -476,7 +476,6 @@ set(pcsx2WindowsSources
 	windows/DwmSetup.cpp
 	windows/ini.cpp
 	windows/PatchBrowser.cpp
-	windows/SamplProf.cpp
 	windows/WinCompressNTFS.cpp
 	windows/WinConsolePipe.cpp
 	windows/WinSysExec.cpp)

@@ -40,6 +40,7 @@ GSDevice::GSDevice()
 {
 	memset(&m_vertex, 0, sizeof(m_vertex));
 	memset(&m_index, 0, sizeof(m_index));
+	m_linear_present = theApp.GetConfigB("linear_present");
 }
 
 GSDevice::~GSDevice()
@@ -109,6 +110,7 @@ void GSDevice::Present(const GSVector4i& r, int shader)
 
 	GL_PUSH("Present");
 
+	// FIXME is it mandatory, it could be slow
 	ClearRenderTarget(m_backbuffer, 0);
 
 	if(m_current)
@@ -125,14 +127,14 @@ void GSDevice::Present(const GSVector4i& r, int shader)
 
 void GSDevice::Present(GSTexture* sTex, GSTexture* dTex, const GSVector4& dRect, int shader)
 {
-	StretchRect(sTex, dTex, dRect, shader);
+	StretchRect(sTex, dTex, dRect, shader, m_linear_present);
 }
 
 GSTexture* GSDevice::FetchSurface(int type, int w, int h, bool msaa, int format)
 {
 	GSVector2i size(w, h);
 
-	for(list<GSTexture*>::iterator i = m_pool.begin(); i != m_pool.end(); i++)
+	for(list<GSTexture*>::iterator i = m_pool.begin(); i != m_pool.end(); ++i)
 	{
 		GSTexture* t = *i;
 
@@ -203,7 +205,7 @@ void GSDevice::AgePool()
 void GSDevice::PurgePool()
 {
 	// OOM emergency. Let's free this useless pool
-	while(m_pool.size() > 0)
+	while(!m_pool.empty())
 	{
 		delete m_pool.back();
 
@@ -241,7 +243,7 @@ GSTexture* GSDevice::GetCurrent()
 	return m_current;
 }
 
-void GSDevice::Merge(GSTexture* sTex[2], GSVector4* sRect, GSVector4* dRect, const GSVector2i& fs, bool slbg, bool mmod, const GSVector4& c)
+void GSDevice::Merge(GSTexture* sTex[3], GSVector4* sRect, GSVector4* dRect, const GSVector2i& fs, const GSRegPMODE& PMODE, const GSRegEXTBUF& EXTBUF, const GSVector4& c)
 {
 	if(m_merge == NULL || m_merge->GetSize() != fs)
 	{
@@ -258,7 +260,7 @@ void GSDevice::Merge(GSTexture* sTex[2], GSVector4* sRect, GSVector4* dRect, con
 
 	if(m_merge)
 	{
-		GSTexture* tex[2] = {NULL, NULL};
+		GSTexture* tex[3] = {NULL, NULL, NULL};
 
 		for(size_t i = 0; i < countof(tex); i++)
 		{
@@ -268,7 +270,7 @@ void GSDevice::Merge(GSTexture* sTex[2], GSVector4* sRect, GSVector4* dRect, con
 			}
 		}
 
-		DoMerge(tex, sRect, m_merge, dRect, slbg, mmod, c);
+		DoMerge(tex, sRect, m_merge, dRect, PMODE, EXTBUF, c);
 
 		for(size_t i = 0; i < countof(tex); i++)
 		{
@@ -348,7 +350,7 @@ void GSDevice::ExternalFX()
 		GSVector4 sRect(0, 0, 1, 1);
 		GSVector4 dRect(0, 0, s.x, s.y);
 
-		StretchRect(m_current, sRect, m_shaderfx, dRect, 7, false);
+		StretchRect(m_current, sRect, m_shaderfx, dRect, ShaderConvert_TRANSPARENCY_FILTER, false);
 		DoExternalFX(m_shaderfx, m_current);
 	}
 }
@@ -368,7 +370,7 @@ void GSDevice::FXAA()
 		GSVector4 sRect(0, 0, 1, 1);
 		GSVector4 dRect(0, 0, s.x, s.y);
 
-		StretchRect(m_current, sRect, m_fxaa, dRect, 7, false);
+		StretchRect(m_current, sRect, m_fxaa, dRect, ShaderConvert_TRANSPARENCY_FILTER, false);
 		DoFXAA(m_fxaa, m_current);
 	}
 }
@@ -388,7 +390,7 @@ void GSDevice::ShadeBoost()
 		GSVector4 sRect(0, 0, 1, 1);
 		GSVector4 dRect(0, 0, s.x, s.y);
 
-		StretchRect(m_current, sRect, m_shadeboost, dRect, 0, false);
+		StretchRect(m_current, sRect, m_shadeboost, dRect, ShaderConvert_COPY, false);
 		DoShadeBoost(m_shadeboost, m_current);
 	}
 }

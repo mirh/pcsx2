@@ -47,15 +47,15 @@ public:
 		Surface(GSRenderer* r, uint8* temp);
 		virtual ~Surface();
 
-		virtual void Update();
+		void UpdateAge();
 	};
 
 	class Source : public Surface
 	{
 		struct {GSVector4i* rect; uint32 count;} m_write;
 
-		void Write(const GSVector4i& r);
-		void Flush(uint32 count);
+		void Write(const GSVector4i& r, int layer);
+		void Flush(uint32 count, int layer);
 
 	public:
 		GSTexture* m_palette;
@@ -71,12 +71,14 @@ public:
 		// still be valid on future. However it ought to be good when the source is created
 		// so it can be used to access un-converted data for the current draw call.
 		GSTexture* m_from_target;
+		GIFRegTEX0 m_layer_TEX0[7]; // Detect already loaded value
 
 	public:
 		Source(GSRenderer* r, const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, uint8* temp, bool dummy_container = false);
 		virtual ~Source();
 
-		virtual void Update(const GSVector4i& rect);
+		void Update(const GSVector4i& rect, int layer = 0);
+		void UpdateLayer(const GIFRegTEX0& TEX0, const GSVector4i& rect, int layer = 0);
 	};
 
 	class Target : public Surface
@@ -96,7 +98,7 @@ public:
 		void UpdateValidity(const GSVector4i& rect);
 		bool Inside(uint32 bp, uint32 bw, uint32 psm, const GSVector4i& rect);
 
-		virtual void Update();
+		void Update();
 	};
 
 	class SourceMap
@@ -129,8 +131,9 @@ protected:
 	bool m_can_convert_depth;
 	int m_crc_hack_level;
 	static bool m_disable_partial_invalidation;
+	bool m_texture_inside_rt;
 
-	virtual Source* CreateSource(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, Target* t = NULL, bool half_right = false);
+	virtual Source* CreateSource(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, Target* t = NULL, bool half_right = false, int x_offset = 0, int y_offset = 0);
 	virtual Target* CreateTarget(const GIFRegTEX0& TEX0, int w, int h, int type);
 
 	virtual int Get8bitFormat() = 0;
@@ -151,7 +154,7 @@ public:
 	Source* LookupSource(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, const GSVector4i& r);
 	Source* LookupDepthSource(const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA, const GSVector4i& r, bool palette = false);
 
-	Target* LookupTarget(const GIFRegTEX0& TEX0, int w, int h, int type, bool used);
+	Target* LookupTarget(const GIFRegTEX0& TEX0, int w, int h, int type, bool used, uint32 fbmask = 0);
 	Target* LookupTarget(const GIFRegTEX0& TEX0, int w, int h, int real_h);
 
 	void InvalidateVideoMemType(int type, uint32 bp);
@@ -161,6 +164,7 @@ public:
 
 	void IncAge();
 	bool UserHacks_HalfPixelOffset;
+	void ScaleTexture(GSTexture* texture);
 
 	const char* to_string(int type) {
 		return (type == DepthStencil) ? "Depth" : "Color";

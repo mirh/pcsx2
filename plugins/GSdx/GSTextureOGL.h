@@ -44,6 +44,7 @@ class GSTextureOGL final : public GSTexture
 		int m_pbo_size;
 		GLuint m_fbo_read;
 		bool m_clean;
+		bool m_generate_mipmap;
 
 		uint8* m_local_buffer;
 		// Avoid alignment constrain
@@ -52,21 +53,26 @@ class GSTextureOGL final : public GSTexture
 		int m_r_y;
 		int m_r_w;
 		int m_r_h;
-
+		int m_layer;
+		int m_max_layer;
 
 		// internal opengl format/type/alignment
 		GLenum m_int_format;
 		GLenum m_int_type;
 		uint32 m_int_shift;
 
+		// Allow to track size of allocated memory
+		uint32 m_mem_usage;
+
 	public:
-		explicit GSTextureOGL(int type, int w, int h, int format, GLuint fbo_read);
+		explicit GSTextureOGL(int type, int w, int h, int format, GLuint fbo_read, bool mipmap);
 		virtual ~GSTextureOGL();
 
-		bool Update(const GSVector4i& r, const void* data, int pitch) final;
-		bool Map(GSMap& m, const GSVector4i* r = NULL) final;
+		bool Update(const GSVector4i& r, const void* data, int pitch, int layer = 0) final;
+		bool Map(GSMap& m, const GSVector4i* r = NULL, int layer = 0) final;
 		void Unmap() final;
-		bool Save(const string& fn, bool user_image = false, bool dds = false) final;
+		void GenerateMipmap() final;
+		bool Save(const string& fn, bool dds = false) final;
 
 		bool IsBackbuffer() { return (m_type == GSTexture::Backbuffer); }
 		bool IsDss() { return (m_type == GSTexture::DepthStencil); }

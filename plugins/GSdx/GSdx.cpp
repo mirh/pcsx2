@@ -127,7 +127,23 @@ GSdxApp theApp;
 
 GSdxApp::GSdxApp()
 {
-	m_ini = "inis/GSdx.ini";
+	// Empty constructor causes an illegal instruction exception on an SSE4.2 machine on Windows.
+	// Non-empty doesn't, but raises a SIGILL signal when compiled against GCC 6.1.1.
+	// So here's a compromise.
+#ifdef _WIN32
+	Init();
+#endif
+}
+
+void GSdxApp::Init()
+{
+	static bool is_initialised = false;
+	if (is_initialised)
+		return;
+	is_initialised = true;
+
+	if (m_ini.empty())
+		m_ini = "inis/GSdx.ini";
 	m_section = "Settings";
 
 #ifdef _WIN32
@@ -183,9 +199,12 @@ GSdxApp::GSdxApp()
 	m_gs_max_anisotropy.push_back(GSSetting(8, "8x", ""));
 	m_gs_max_anisotropy.push_back(GSSetting(16, "16x", ""));
 
-	m_gs_filter.push_back(GSSetting(0, "Nearest", ""));
-	m_gs_filter.push_back(GSSetting(1, "Bilinear", "Forced"));
-	m_gs_filter.push_back(GSSetting(2, "Bilinear", "PS2"));
+	m_gs_filter.push_back(GSSetting(static_cast<uint32>(Filtering::Nearest), "Nearest", ""));
+	m_gs_filter.push_back(GSSetting(static_cast<uint32>(Filtering::Bilinear_Forced), "Bilinear", "Forced"));
+	m_gs_filter.push_back(GSSetting(static_cast<uint32>(Filtering::Bilinear_PS2), "Bilinear", "PS2"));
+	m_gs_filter.push_back(GSSetting(static_cast<uint32>(Filtering::Trilinear), "Trilinear", ""));
+	m_gs_filter.push_back(GSSetting(static_cast<uint32>(Filtering::Trilinear_Bilinear_Forced), "Trilinear", "Forced Bilinear"));
+	m_gs_filter.push_back(GSSetting(static_cast<uint32>(Filtering::Trilinear_Always), "Trilinear", "Ultra/Slow"));
 
 	m_gs_gl_ext.push_back(GSSetting(-1, "Auto", ""));
 	m_gs_gl_ext.push_back(GSSetting(0,  "Force-Disabled", ""));
@@ -268,17 +287,20 @@ GSdxApp::GSdxApp()
 	m_default_configuration["capture_threads"]                            = "4";
 	m_default_configuration["CaptureHeight"]                              = "480";
 	m_default_configuration["CaptureWidth"]                               = "640";
+	m_default_configuration["clut_load_before_draw"]                      = "0";
 	m_default_configuration["crc_hack_level"]                             = "3";
 	m_default_configuration["CrcHacksExclusions"]                         = "";
 	m_default_configuration["debug_glsl_shader"]                          = "0";
 	m_default_configuration["debug_opengl"]                               = "0";
 	m_default_configuration["dump"]                                       = "0";
 	m_default_configuration["extrathreads"]                               = "2";
+	m_default_configuration["extrathreads_height"]                        = "4";
 	m_default_configuration["filter"]                                     = "2";
 	m_default_configuration["force_texture_clear"]                        = "0";
 	m_default_configuration["fxaa"]                                       = "0";
 	m_default_configuration["interlace"]                                  = "7";
 	m_default_configuration["large_framebuffer"]                          = "1";
+	m_default_configuration["linear_present"]                             = "1";
 	m_default_configuration["MaxAnisotropy"]                              = "0";
 	m_default_configuration["mipmap"]                                     = "1";
 	m_default_configuration["ModeHeight"]                                 = "480";
@@ -292,6 +314,7 @@ GSdxApp::GSdxApp()
 	m_default_configuration["override_GL_ARB_gpu_shader5"]                = "-1";
 	m_default_configuration["override_GL_ARB_shader_image_load_store"]    = "-1";
 	m_default_configuration["override_GL_ARB_viewport_array"]             = "-1";
+	m_default_configuration["override_GL_ARB_texture_barrier"]            = "-1";
 	m_default_configuration["override_GL_EXT_texture_filter_anisotropic"] = "-1";
 	m_default_configuration["paltex"]                                     = "0";
 	m_default_configuration["png_compression_level"]                      = to_string(Z_BEST_SPEED);
@@ -318,19 +341,22 @@ GSdxApp::GSdxApp()
 	m_default_configuration["UserHacks_align_sprite_X"]                   = "0";
 	m_default_configuration["UserHacks_AlphaHack"]                        = "0";
 	m_default_configuration["UserHacks_AlphaStencil"]                     = "0";
-	m_default_configuration["UserHacks_ColorDepthClearOverlap"]           = "0";
+	m_default_configuration["UserHacks_AutoFlush"]                        = "0";
 	m_default_configuration["UserHacks_DisableDepthSupport"]              = "0";
 	m_default_configuration["UserHacks_DisableGsMemClear"]                = "0";
 	m_default_configuration["UserHacks_DisablePartialInvalidation"]       = "0";
 	m_default_configuration["UserHacks_HalfPixelOffset"]                  = "0";
 	m_default_configuration["UserHacks_merge_pp_sprite"]                  = "0";
+	m_default_configuration["UserHacks_mipmap"]                           = "0";
 	m_default_configuration["UserHacks_MSAA"]                             = "0";
+	m_default_configuration["UserHacks_unscale_point_line"]               = "0";
 	m_default_configuration["UserHacks_round_sprite_offset"]              = "0";
-	m_default_configuration["UserHacks_safe_fbmask"]                      = "0";
 	m_default_configuration["UserHacks_SkipDraw"]                         = "0";
 	m_default_configuration["UserHacks_SpriteHack"]                       = "0";
 	m_default_configuration["UserHacks_TCOffset"]                         = "0";
+	m_default_configuration["UserHacks_TextureInsideRt"]                  = "0";
 	m_default_configuration["UserHacks_WildHack"]                         = "0";
+	m_default_configuration["wrap_gs_mem"]                                = "0";
 	m_default_configuration["vsync"]                                      = "0";
 }
 

@@ -611,6 +611,7 @@ void GSDrawScanlineCodeGenerator::TestZ(const Xmm& temp1, const Xmm& temp2)
 
 	mov(ebp, ptr[esi + 4]);
 	add(ebp, ptr[edi + 4]);
+	and(ebp, HALF_VM_SIZE - 1);
 
 	// GSVector4i zs = zi;
 
@@ -2179,21 +2180,6 @@ void GSDrawScanlineCodeGenerator::ReadMask()
 
 void GSDrawScanlineCodeGenerator::TestAlpha()
 {
-	switch(m_sel.afail)
-	{
-	case AFAIL_FB_ONLY:
-		if(!m_sel.zwrite) return;
-		break;
-
-	case AFAIL_ZB_ONLY:
-		if(!m_sel.fwrite) return;
-		break;
-
-	case AFAIL_RGB_ONLY:
-		if(!m_sel.zwrite && m_sel.fpsm == 1) return;
-		break;
-	}
-
 	switch(m_sel.atst)
 	{
 	case ATST_NEVER:
@@ -2375,6 +2361,7 @@ void GSDrawScanlineCodeGenerator::ReadFrame()
 
 	mov(ebx, ptr[esi]);
 	add(ebx, ptr[edi]);
+	and(ebx, HALF_VM_SIZE - 1);
 
 	if(!m_sel.rfb)
 	{
@@ -2400,7 +2387,9 @@ void GSDrawScanlineCodeGenerator::TestDestAlpha()
 		if(m_sel.fpsm == 2)
 		{
 			pxor(xmm0, xmm0);
-			psrld(xmm1, 15);
+			// psrld(xmm1, 15);
+			pslld(xmm1, 16);
+			psrld(xmm1, 31);
 			pcmpeqd(xmm1, xmm0);
 		}
 		else

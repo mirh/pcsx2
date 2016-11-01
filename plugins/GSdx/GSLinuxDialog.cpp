@@ -287,15 +287,13 @@ void populate_sw_table(GtkWidget* sw_table)
 	GtkWidget* threads_spin  = CreateSpinButton(0, 32, "extrathreads");
 
 	GtkWidget* aa_check         = CreateCheckBox("Edge anti-aliasing (AA1)", "aa1");
-	GtkWidget* mipmap_check     = CreateCheckBox("Mipmap", "mipmap");
 
 	AddTooltip(aa_check, IDC_AA1);
-	AddTooltip(mipmap_check, IDC_MIPMAP);
 	AddTooltip(threads_label, threads_spin, IDC_SWTHREADS);
 
 	s_table_line = 0;
 	InsertWidgetInTable(sw_table , threads_label     , threads_spin);
-	InsertWidgetInTable(sw_table , aa_check, mipmap_check);
+	InsertWidgetInTable(sw_table , aa_check);
 }
 
 void populate_shader_table(GtkWidget* shader_table)
@@ -312,6 +310,8 @@ void populate_shader_table(GtkWidget* shader_table)
 	GtkWidget* tv_shader_label  = left_label("TV shader:");
 	GtkWidget* tv_shader        = CreateComboBoxFromVector(theApp.m_gs_tv_shaders, "TVShader");
 
+	GtkWidget* linear_check     = CreateCheckBox("Texture Filtering of Display", "linear_present");
+
 	// Shadeboost scale
 	GtkWidget* sb_brightness       = CreateScale("ShadeBoost_Brightness");
 	GtkWidget* sb_brightness_label = left_label("Shade Boost Brightness:");
@@ -325,8 +325,10 @@ void populate_shader_table(GtkWidget* shader_table)
 	AddTooltip(shadeboost_check, IDC_SHADEBOOST);
 	AddTooltip(shaderfx_check, IDC_SHADER_FX);
 	AddTooltip(fxaa_check, IDC_FXAA);
+	AddTooltip(linear_check, IDC_LINEAR_PRESENT);
 
 	s_table_line = 0;
+	InsertWidgetInTable(shader_table , linear_check);
 	InsertWidgetInTable(shader_table , fxaa_check);
 	InsertWidgetInTable(shader_table , shadeboost_check);
 	InsertWidgetInTable(shader_table , sb_brightness_label , sb_brightness);
@@ -348,9 +350,10 @@ void populate_hack_table(GtkWidget* hack_table)
 	GtkWidget* hack_tco_entry      = CreateTextBox("UserHacks_TCOffset");
 	GtkWidget* align_sprite_check  = CreateCheckBox("Align sprite hack", "UserHacks_align_sprite_X");
 	GtkWidget* preload_gs_check    = CreateCheckBox("Preload Frame", "preload_frame_with_gs_data");
-	GtkWidget* hack_safe_fbmask    = CreateCheckBox("Safe Accurate Blending", "UserHacks_safe_fbmask");
 	GtkWidget* hack_fast_inv       = CreateCheckBox("Fast Texture Invalidation", "UserHacks_DisablePartialInvalidation");
 	GtkWidget* hack_depth_check    = CreateCheckBox("Disable Depth Emulation", "UserHacks_DisableDepthSupport");
+	GtkWidget* hack_auto_flush     = CreateCheckBox("Auto Flush Primitives", "UserHacks_AutoFlush");
+	GtkWidget* hack_unscale_prim   = CreateCheckBox("Unscale Point&Line Primitives", "UserHacks_unscale_point_line");
 
 	GtkWidget* hack_sprite_box     = CreateComboBoxFromVector(theApp.m_gs_hack, "UserHacks_SpriteHack");
 	GtkWidget* hack_sprite_label   = left_label("Alpha-Sprite Hack:");
@@ -368,16 +371,17 @@ void populate_hack_table(GtkWidget* hack_table)
 	AddTooltip(align_sprite_check, IDC_ALIGN_SPRITE);
 	AddTooltip(stretch_hack_label, stretch_hack_box, IDC_ROUND_SPRITE);
 	AddTooltip(preload_gs_check, IDC_PRELOAD_GS);
-	AddTooltip(hack_safe_fbmask, IDC_SAFE_FBMASK);
 	AddTooltip(hack_fast_inv, IDC_FAST_TC_INV);
 	AddTooltip(hack_depth_check, IDC_TC_DEPTH);
+	AddTooltip(hack_auto_flush, IDC_AUTO_FLUSH);
+	AddTooltip(hack_unscale_prim, IDC_UNSCALE_POINT_LINE);
 
 
 	s_table_line = 0;
 	InsertWidgetInTable(hack_table , hack_wild_check     , align_sprite_check);
 	InsertWidgetInTable(hack_table , hack_offset_check   , preload_gs_check);
-	InsertWidgetInTable(hack_table , hack_safe_fbmask    , hack_fast_inv);
-	InsertWidgetInTable(hack_table , hack_depth_check);
+	InsertWidgetInTable(hack_table , hack_unscale_prim   , hack_fast_inv);
+	InsertWidgetInTable(hack_table , hack_depth_check    , hack_auto_flush);
 	InsertWidgetInTable(hack_table , hack_sprite_label   , hack_sprite_box );
 	InsertWidgetInTable(hack_table , stretch_hack_label  , stretch_hack_box );
 	InsertWidgetInTable(hack_table , hack_skipdraw_label , hack_skipdraw_spin);
@@ -390,10 +394,16 @@ void populate_main_table(GtkWidget* main_table)
 	GtkWidget* render_combo_box = CreateComboBoxFromVector(theApp.m_gs_renderers, "Renderer");
 	GtkWidget* interlace_label     = left_label("Interlacing (F5):");
 	GtkWidget* interlace_combo_box = CreateComboBoxFromVector(theApp.m_gs_interlace, "interlace");
+	GtkWidget* mipmap_label        = left_label("Mipmap (Insert):");
+	GtkWidget* mipmap_combo_box    = CreateComboBoxFromVector(theApp.m_gs_hack, "mipmap");
+
+	AddTooltip(mipmap_label, IDC_MIPMAP);
+	AddTooltip(mipmap_combo_box, IDC_MIPMAP);
 
 	s_table_line = 0;
 	InsertWidgetInTable(main_table, render_label, render_combo_box);
 	InsertWidgetInTable(main_table, interlace_label, interlace_combo_box);
+	InsertWidgetInTable(main_table, mipmap_label, mipmap_combo_box);
 }
 
 void populate_debug_table(GtkWidget* debug_table)

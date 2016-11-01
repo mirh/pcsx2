@@ -19,8 +19,8 @@
  *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
  */
 
- #ifndef __KEYBOARD_H__
- #define __KEYBOARD_H__
+#ifndef __KEYBOARD_H__
+#define __KEYBOARD_H__
 
 #include "onepad.h"
 
@@ -29,13 +29,13 @@
 #include "Linux/linux.h"
 
 extern Display *GSdsp;
-extern void PollForX11KeyboardInput(int pad);
+extern void PollForX11KeyboardInput();
 extern bool PollX11KeyboardMouseEvent(u32 &pkey);
 extern Window GSwin;
 
 #else
 
-extern char* KeysymToChar(int keysym);
+extern char *KeysymToChar(int keysym);
 extern WNDPROC GSwndProc;
 extern HWND GShwnd;
 

@@ -52,8 +52,8 @@ class GSRendererOGL final : public GSRendererHW
 
 		unsigned int UserHacks_TCOffset;
 		float UserHacks_TCO_x, UserHacks_TCO_y;
-		bool UserHacks_safe_fbmask;
 		bool UserHacks_merge_sprite;
+		bool UserHacks_unscale_pt_ln;
 
 		GSDeviceOGL::VSConstantBuffer vs_cb;
 		GSDeviceOGL::PSConstantBuffer ps_cb;
@@ -74,11 +74,13 @@ class GSRendererOGL final : public GSRendererHW
 	private:
 		inline void ResetStates();
 		inline void Lines2Sprites();
-		inline void SetupIA();
+		inline void SetupIA(const float& sx, const float& sy);
 		inline void EmulateTextureShuffleAndFbmask();
 		inline void EmulateChannelShuffle(GSTexture** rt, const GSTextureCache::Source* tex);
 		inline void EmulateBlending(bool DATE_GL42);
 		inline void EmulateTextureSampler(const GSTextureCache::Source* tex);
+		inline void EmulateAtst(const int pass, const GSTextureCache::Source* tex);
+		inline void EmulateZbuffer();
 
 	public:
 		GSRendererOGL();

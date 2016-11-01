@@ -180,7 +180,8 @@ static __fi void _psxTestInterrupts()
 	// The following ints are rarely called.  Encasing them in a conditional
 	// as follows helps speed up most games.
 
-	if( psxRegs.interrupt & ( (1ul<<5) | (3ul<<11) | (3ul<<20) | (3ul<<17) ) )
+	if( psxRegs.interrupt & ((1 << IopEvt_Cdvd) | (1 << IopEvt_Dma11) | (1 << IopEvt_Dma12)
+		| (1 << IopEvt_Cdrom) | (1 << IopEvt_CdromRead) | (1 << IopEvt_DEV9) | (1 << IopEvt_USB)))
 	{
 		IopTestEvent(IopEvt_Cdvd,		cdvdActionInterrupt);
 		IopTestEvent(IopEvt_Dma11,		psxDMA11Interrupt);	// SIO2
@@ -221,10 +222,6 @@ __ri void iopEventTest()
 			PSXCPU_LOG("Interrupt: %x  %x", psxHu32(0x1070), psxHu32(0x1074));
 			psxException(0, 0);
 			iopEventAction = true;
-
-			// No need to execute the SIFhack after cpuExceptions, since these by nature break SIF's
-			// thread sleep hangs and allow the IOP to "come back to life."
-			psxRegs.interrupt &= ~IopEvt_SIFhack;
 		}
 	}
 }

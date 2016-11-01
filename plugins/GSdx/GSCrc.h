@@ -103,7 +103,6 @@ public:
 		LordOfTheRingsTwoTowers,
 		LordOfTheRingsThirdAge,
 		RedDeadRevolver,
-		SpidermanWoS,
 		HeavyMetalThunder,
 		SilentHill3,
 		SilentHill2,
@@ -118,10 +117,7 @@ public:
 		SSX3,
 		Black,
 		VF4,
-		TyTasmanianTiger,
-		TyTasmanianTiger2,
 		FFVIIDoC,
-		DigimonRumbleArena2,
 		StarWarsForceUnleashed,
 		StarWarsBattlefront,
 		StarWarsBattlefront2,
@@ -131,8 +127,6 @@ public:
 		BurnoutRevenge,
 		BurnoutDominator,
 		MidnightClub3,
-		XmenOriginsWolverine,
-		CallofDutyFinalFronts,
 		SpyroNewBeginning,
 		SpyroEternalNight,
 		TalesOfLegendia,
@@ -174,6 +168,12 @@ public:
 		SteambotChronicles,
 		SacredBlaze,
 		SuperManReturns,
+		ItadakiStreet,
+		Jak1,
+		Jak2,
+		Jak3,
+		JakX,
+		HarleyDavidson,
 		TitleCount,
 	};
 
@@ -211,7 +211,7 @@ public:
 
 private:
 	static Game m_games[];
-	static hash_map<uint32, Game*> m_map;
+	static map<uint32, Game*> m_map;
 
 public:
 	static Game Lookup(uint32 crc);

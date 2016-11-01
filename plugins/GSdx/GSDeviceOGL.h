@@ -121,13 +121,13 @@ public:
 	{
 		GSVector4 Vertex_Scale_Offset;
 		GSVector2i DepthMask;
-		GSVector2 TextureScale;
+		GSVector2 PointSize;
 
 		VSConstantBuffer()
 		{
 			Vertex_Scale_Offset = GSVector4::zero();
-			DepthMask           = GSVector2i(0, 0);
-			TextureScale        = GSVector2(0, 0);
+			DepthMask           = GSVector2i(0);
+			PointSize           = GSVector2(0);
 		}
 
 		__forceinline bool Update(const VSConstantBuffer* cb)
@@ -173,8 +173,9 @@ public:
 			{
 				uint32 sprite:1;
 				uint32 point:1;
+				uint32 line:1;
 
-				uint32 _free:30;
+				uint32 _free:29;
 			};
 
 			uint32 key;
@@ -203,6 +204,7 @@ public:
 			FogColor_AREF = GSVector4::zero();
 			HalfTexel     = GSVector4::zero();
 			WH            = GSVector4::zero();
+			TA_Af         = GSVector4::zero();
 			MinMax        = GSVector4::zero();
 			MskFix        = GSVector4i::zero();
 			TC_OH_TS      = GSVector4::zero();
@@ -290,8 +292,11 @@ public:
 				uint32 tcoffsethack:1;
 				uint32 urban_chaos_hle:1;
 				uint32 tales_of_abyss_hle:1;
+				uint32 tex_is_fb:1; // Jak Shadows
+				uint32 automatic_lod:1;
+				uint32 manual_lod:1;
 
-				uint32 _free2:14;
+				uint32 _free2:11;
 			};
 
 			uint64 key;
@@ -311,10 +316,11 @@ public:
 			{
 				uint32 tau:1;
 				uint32 tav:1;
-				uint32 ltf:1;
+				uint32 biln:1;
+				uint32 triln:3;
 				uint32 aniso:1;
 
-				uint32 _free:28;
+				uint32 _free:25;
 			};
 
 			uint32 key;
@@ -383,6 +389,7 @@ public:
 	{
 		GSVector4i ScalingFactor;
 		GSVector4i ChannelShuffle;
+		GSVector4i EMOD_AC;
 
 		MiscConstantBuffer() {memset(this, 0, sizeof(*this));}
 	};
@@ -392,13 +399,14 @@ public:
 	static const int m_NO_BLEND;
 	static const int m_MERGE_BLEND;
 
-	static int s_n;
 	static int m_shader_inst;
 	static int m_shader_reg;
 
 	private:
 	uint32 m_msaa;				// Level of Msaa
 	int m_force_texture_clear;
+	int m_mipmap;
+	Filtering m_filter;
 
 	static bool m_debug_gl_call;
 	static FILE* m_debug_gl_file;
@@ -422,7 +430,7 @@ public:
 
 	struct {
 		GLuint vs;		// program object
-		GLuint ps[18];	// program object
+		GLuint ps[ShaderConvert_Count];	// program object
 		GLuint ln;		// sampler object
 		GLuint pt;		// sampler object
 		GSDepthStencilOGL* dss;
@@ -457,8 +465,8 @@ public:
 	} m_profiler;
 
 	GLuint m_vs[1];
-	GLuint m_gs[1<<2];
-	GLuint m_ps_ss[1<<4];
+	GLuint m_gs[1<<3];
+	GLuint m_ps_ss[1<<7];
 	GSDepthStencilOGL* m_om_dss[1<<5];
 	hash_map<uint64, GLuint > m_ps;
 	GLuint m_apitrace;
@@ -475,7 +483,7 @@ public:
 	GSTexture* CreateSurface(int type, int w, int h, bool msaa, int format);
 	GSTexture* FetchSurface(int type, int w, int h, bool msaa, int format);
 
-	void DoMerge(GSTexture* sTex[2], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect, bool slbg, bool mmod, const GSVector4& c) final;
+	void DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect, const GSRegPMODE& PMODE, const GSRegEXTBUF& EXTBUF, const GSVector4& c) final;
 	void DoInterlace(GSTexture* sTex, GSTexture* dTex, int shader, bool linear, float yoffset = 0) final;
 	void DoFXAA(GSTexture* sTex, GSTexture* dTex) final;
 	void DoShadeBoost(GSTexture* sTex, GSTexture* dTex) final;
@@ -515,7 +523,7 @@ public:
 	void ClearRenderTarget(GSTexture* t, const GSVector4& c) final;
 	void ClearRenderTarget(GSTexture* t, uint32 c) final;
 	void ClearRenderTarget_i(GSTexture* t, int32 c);
-	void ClearDepth(GSTexture* t, float c) final;
+	void ClearDepth(GSTexture* t) final;
 	void ClearStencil(GSTexture* t, uint8 c) final;
 
 	GSTexture* CreateRenderTarget(int w, int h, bool msaa, int format = 0) final;
@@ -547,7 +555,7 @@ public:
 	void PSSetSamplerState(GLuint ss);
 
 	void OMSetDepthStencilState(GSDepthStencilOGL* dss);
-	void OMSetBlendState(uint8 blend_index = 0, uint8 blend_factor = 0, bool is_blend_constant = false);
+	void OMSetBlendState(uint8 blend_index = 0, uint8 blend_factor = 0, bool is_blend_constant = false, bool accumulation_blend = false);
 	void OMSetRenderTargets(GSTexture* rt, GSTexture* ds, const GSVector4i* scissor = NULL) final;
 	void OMSetColorMaskState(OMColorMaskSelector sel = OMColorMaskSelector());
 
@@ -556,7 +564,6 @@ public:
 	GLuint CompileVS(VSSelector sel);
 	GLuint CompileGS(GSSelector sel);
 	GLuint CompilePS(PSSelector sel);
-	GLuint CreateSampler(bool bilinear, bool tau, bool tav, bool aniso = false);
 	GLuint CreateSampler(PSSamplerSelector sel);
 	GSDepthStencilOGL* CreateDepthStencil(OMDepthStencilSelector dssel);
 

@@ -31,10 +31,13 @@ const char* dialog_message(int ID, bool* updateText) {
 	switch (ID)
 	{
 		case IDC_FILTER:
-			return "Control the texture bilinear filtering of the emulation.\n\n"
+			return "Control the texture filtering of the emulation.\n\n"
 				"Nearest:\nAlways disable interpolation, rendering will be blocky.\n\n"
-				"PS2:\nUse same mode as the PS2. It is the more accurate option.\n\n"
-				"Forced:\nAlways enable interpolation. Rendering is smoother but it could generate some glitches.";
+				"Bilinear Forced:\nAlways enable interpolation. Rendering is smoother but it could generate some glitches.\n\n"
+				"Bilinear PS2:\nUse same mode as the PS2. It is the more accurate option.\n\n"
+				"Trilinear:\nUse OpenGL trilinear interpolation when PS2 uses mipmaps.\n\n"
+				"Trilinear Forced Bilinear:\nSame as above but always enable bilinear interpolation.\n\n"
+				"Trilinear Ultra:\nAlways enable full trilinear interpolation. Warning Slow!\n\n";
 		case IDC_CRC_LEVEL:
 			return "Control the number of Auto-CRC hacks applied to games.\n\n"
 				"None:\nRemove nearly all CRC hacks (debug only).\n\n"
@@ -102,9 +105,6 @@ const char* dialog_message(int ID, bool* updateText) {
 				"High:\nExtend it to destination alpha blending and color wrapping. (help shadow and fog effect). A good CPU is required.\n\n"
 				"Full:\nExcept few cases, the blending unit will be fully emulated by the shader. It is ultra slow! It is intended for debug.\n\n"
 				"Ultra:\nThe blending unit will be completely emulated by the shader. It is ultra slow! It is intended for debug.";
-		case IDC_SAFE_FBMASK:
-			return "By default, accurate blending relies on undefined hardware behavior to be fast.\n"
-				"This option enables a slower but safer behavior if anyone encounters an issue.\n";
 		case IDC_TC_DEPTH:
 			return "Disable the support of Depth buffer in the texture cache.\n"
 				"It can help to increase speed but it will likely create various glitches.";
@@ -121,6 +121,12 @@ const char* dialog_message(int ID, bool* updateText) {
 			return "Enables external shader for additional post-processing effects.";
 		case IDC_FXAA:
 			return "Enables fast approximate anti-aliasing. Small performance impact.";
+		case IDC_AUTO_FLUSH:
+			return "Force a primitive flush when a framebuffer is also an input texture. Fixes some processing effects such as the shadows in the Jak series and radiosity in GTA:SA.\n"
+				"Warning: it's very costly on the performance.\n\n"
+				"Note: OpenGL HW renderer is able to handle Jak shadows at full speed without this option.";
+		case IDC_UNSCALE_POINT_LINE:
+			return "Increases the width of lines at higher than native resolutions. This ensures that the lines will keep the correct proportions and prevents aliasing. Avoids empty lines on the screen in games such as Ridge Racer V, and clears FMV's obscured by a grid like Silent Hill series and Dirge of Cerberus.";
 #ifdef _WIN32
 		// DX9 only
 		case IDC_FBA:
@@ -128,11 +134,15 @@ const char* dialog_message(int ID, bool* updateText) {
 		case IDC_LOGZ:
 			return "Treat depth as logarithmic instead of linear. Recommended setting is on unless it causes graphical glitches.";
 #endif
+#ifdef __linux__
+		case IDC_LINEAR_PRESENT:
+			return "Use bilinear filtering when Upscaling/Downscaling the image to the screen. Disable it if you want a sharper/pixelated output.";
+#endif
 		// Exclusive for Hardware Renderer
 		case IDC_PRELOAD_GS:
 			return "Uploads GS data when rendering a new frame to reproduce some effects accurately. Fixes black screen issues in games like Armored Core: Last Raven.";
 		case IDC_MIPMAP:
-			return "Enables mipmapping, which some games require to render correctly. Turn off only for debug purposes.";
+			return "Enables mipmapping, which some games require to render correctly.";
 		case IDC_FAST_TC_INV:
 			return "By default, the texture cache handles partial invalidations. Unfortunately it is very costly to compute CPU wise."
 				"\n\nThis hack replaces the partial invalidation with a complete deletion of the texture to reduce the CPU load.\n\nIt helps snowblind engine game.";

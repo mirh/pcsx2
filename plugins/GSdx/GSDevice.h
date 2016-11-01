@@ -44,7 +44,10 @@ enum ShaderConvert {
 	ShaderConvert_RGBA8_TO_FLOAT24,
 	ShaderConvert_RGBA8_TO_FLOAT16,
 	ShaderConvert_RGB5A1_TO_FLOAT16,
-	ShaderConvert_RGBA_TO_8I = 17
+	ShaderConvert_RGBA_TO_8I = 17,
+	ShaderConvert_OSD,
+	ShaderConvert_YUV,
+	ShaderConvert_Count
 };
 
 #pragma pack(push, 1)
@@ -117,11 +120,12 @@ protected:
 	struct {size_t stride, start, count, limit;} m_vertex;
 	struct {size_t start, count, limit;} m_index;
 	unsigned int m_frame; // for ageing the pool
+	bool m_linear_present;
 
 	virtual GSTexture* CreateSurface(int type, int w, int h, bool msaa, int format) = 0;
 	virtual GSTexture* FetchSurface(int type, int w, int h, bool msaa, int format);
 
-	virtual void DoMerge(GSTexture* sTex[2], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect, bool slbg, bool mmod, const GSVector4& c) = 0;
+	virtual void DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect, const GSRegPMODE& PMODE, const GSRegEXTBUF& EXTBUF, const GSVector4& c) = 0;
 	virtual void DoInterlace(GSTexture* sTex, GSTexture* dTex, int shader, bool linear, float yoffset) = 0;
 	virtual void DoFXAA(GSTexture* sTex, GSTexture* dTex) {}
 	virtual void DoShadeBoost(GSTexture* sTex, GSTexture* dTex) {}
@@ -152,7 +156,7 @@ public:
 
 	virtual void ClearRenderTarget(GSTexture* t, const GSVector4& c) {}
 	virtual void ClearRenderTarget(GSTexture* t, uint32 c) {}
-	virtual void ClearDepth(GSTexture* t, float c) {}
+	virtual void ClearDepth(GSTexture* t) {}
 	virtual void ClearStencil(GSTexture* t, uint8 c) {}
 
 	virtual GSTexture* CreateRenderTarget(int w, int h, bool msaa, int format = 0);
@@ -175,7 +179,7 @@ public:
 
 	GSTexture* GetCurrent();
 
-	void Merge(GSTexture* sTex[2], GSVector4* sRect, GSVector4* dRect, const GSVector2i& fs, bool slbg, bool mmod, const GSVector4& c);
+	void Merge(GSTexture* sTex[3], GSVector4* sRect, GSVector4* dRect, const GSVector2i& fs, const GSRegPMODE& PMODE, const GSRegEXTBUF& EXTBUF, const GSVector4& c);
 	void Interlace(const GSVector2i& ds, int field, int mode, float yoffset);
 	void FXAA();
 	void ShadeBoost();

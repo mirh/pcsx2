@@ -466,10 +466,10 @@ void GSDevice11::ClearRenderTarget(GSTexture* t, uint32 c)
 	m_ctx->ClearRenderTargetView(*(GSTexture11*)t, color.v);
 }
 
-void GSDevice11::ClearDepth(GSTexture* t, float c)
+void GSDevice11::ClearDepth(GSTexture* t)
 {
 	if (!t) return;
-	m_ctx->ClearDepthStencilView(*(GSTexture11*)t, D3D11_CLEAR_DEPTH, c, 0);
+	m_ctx->ClearDepthStencilView(*(GSTexture11*)t, D3D11_CLEAR_DEPTH, 0.0f, 0);
 }
 
 void GSDevice11::ClearStencil(GSTexture* t, uint8 c)
@@ -526,9 +526,6 @@ GSTexture* GSDevice11::CreateSurface(int type, int w, int h, bool msaa, int form
 	if(SUCCEEDED(hr))
 	{
 		t = new GSTexture11(texture);
-		if (t == NULL) {
-			throw GSDXErrorOOM();
-		}
 
 		switch(type)
 		{
@@ -536,9 +533,13 @@ GSTexture* GSDevice11::CreateSurface(int type, int w, int h, bool msaa, int form
 			ClearRenderTarget(t, 0);
 			break;
 		case GSTexture::DepthStencil:
-			ClearDepth(t, 0);
+			ClearDepth(t);
 			break;
 		}
+	}
+	else
+	{
+		throw std::bad_alloc();
 	}
 
 	return t;
@@ -721,8 +722,11 @@ void GSDevice11::StretchRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 	PSSetShaderResources(NULL, NULL);
 }
 
-void GSDevice11::DoMerge(GSTexture* sTex[2], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect, bool slbg, bool mmod, const GSVector4& c)
+void GSDevice11::DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect, const GSRegPMODE& PMODE, const GSRegEXTBUF& EXTBUF, const GSVector4& c)
 {
+	bool slbg = PMODE.SLBG;
+	bool mmod = PMODE.MMOD;
+
 	ClearRenderTarget(dTex, c);
 
 	if(sTex[1] && !slbg)

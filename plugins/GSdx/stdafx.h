@@ -45,6 +45,10 @@
 
 #define D3DCOLORWRITEENABLE_RGBA (D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA)
 
+#else
+
+#include <fcntl.h>
+
 #endif
 
 
@@ -404,6 +408,9 @@ struct aligned_free_second {template<class T> void operator()(T& p) {_aligned_fr
 extern void* vmalloc(size_t size, bool code);
 extern void vmfree(void* ptr, size_t size);
 
+extern void* fifo_alloc(size_t size, size_t repeat);
+extern void fifo_free(void* ptr, size_t size, size_t repeat);
+
 #ifdef _WIN32
 
 	#ifdef ENABLE_VTUNE
@@ -425,6 +432,18 @@ extern void vmfree(void* ptr, size_t size);
 #define GL_CACHE(...) GL_INSERT(GL_DEBUG_TYPE_OTHER, 0xFEAD, GL_DEBUG_SEVERITY_NOTIFICATION, __VA_ARGS__)
 #else
 #define GL_CACHE(...) (0);
+#endif
+
+#if defined(ENABLE_TRACE_REG) && defined(_DEBUG)
+#define GL_REG(...) GL_INSERT(GL_DEBUG_TYPE_OTHER, 0xB0B0, GL_DEBUG_SEVERITY_NOTIFICATION, __VA_ARGS__)
+#else
+#define GL_REG(...) (0);
+#endif
+
+#if defined(ENABLE_EXTRA_LOG) && defined(_DEBUG)
+#define GL_DBG(...) GL_INSERT(GL_DEBUG_TYPE_OTHER, 0xD0D0, GL_DEBUG_SEVERITY_NOTIFICATION, __VA_ARGS__)
+#else
+#define GL_DBG(...) (0);
 #endif
 
 #if defined(ENABLE_OGL_DEBUG)

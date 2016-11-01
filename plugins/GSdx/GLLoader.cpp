@@ -21,6 +21,7 @@
 #include "stdafx.h"
 #include "GLLoader.h"
 #include "GSdx.h"
+#include "GS.h"
 
 PFNGLBLENDCOLORPROC                    gl_BlendColor                       = NULL;
 
@@ -139,6 +140,7 @@ PFNGLCOPYTEXTURESUBIMAGE2DPROC         glCopyTextureSubImage2D             = NUL
 PFNGLBINDTEXTUREUNITPROC               glBindTextureUnit                   = NULL;
 PFNGLGETTEXTUREIMAGEPROC               glGetTextureImage                   = NULL;
 PFNGLTEXTUREPARAMETERIPROC             glTextureParameteri                 = NULL;
+PFNGLGENERATETEXTUREMIPMAPPROC         glGenerateTextureMipmap             = NULL;
 
 PFNGLCREATEFRAMEBUFFERSPROC            glCreateFramebuffers                = NULL;
 PFNGLCLEARNAMEDFRAMEBUFFERFVPROC       glClearNamedFramebufferfv           = NULL;
@@ -184,7 +186,7 @@ namespace ReplaceGL {
 
 	void APIENTRY ViewportIndexedf(GLuint index, GLfloat x, GLfloat y, GLfloat w, GLfloat h)
 	{
-		glViewport(x, y, w, h);
+		glViewport(GLint(x), GLint(y), GLsizei(w), GLsizei(h));
 	}
 }
 
@@ -192,7 +194,7 @@ namespace GLLoader {
 
 	bool legacy_fglrx_buggy_driver = false;
 	bool fglrx_buggy_driver    = false;
-	bool mesa_amd_buggy_driver = false;
+	bool mesa_buggy_driver     = false;
 	bool nvidia_buggy_driver   = false;
 	bool intel_buggy_driver    = false;
 	bool in_replayer           = false;
@@ -208,6 +210,8 @@ namespace GLLoader {
 	bool found_GL_ARB_gpu_shader5 = false; // Require IvyBridge
 	bool found_GL_ARB_shader_image_load_store = false; // Intel IB. Nvidia/AMD miss Mesa implementation.
 	bool found_GL_ARB_viewport_array = false; // Intel IB. AMD/NVIDIA DX10
+	// Bonus to monitor the VRAM
+	bool found_GL_NVX_gpu_memory_info = false;
 
 	// Mandatory
 	bool found_GL_ARB_buffer_storage = false;
@@ -262,22 +266,23 @@ namespace GLLoader {
 		// Name changed but driver is still bad!
 		if (strstr(vendor, "ATI") || strstr(vendor, "Advanced Micro Devices"))
 			fglrx_buggy_driver = true;
-		if (fglrx_buggy_driver && strstr((const char*)&s[v], " 15.")) // blacklist all 2015 drivers
+		if (fglrx_buggy_driver && (
+					strstr((const char*)&s[v], " 15.") // blacklist all 2015 drivers
+					|| strstr((const char*)&s[v], " 16.1"))) // And start of 2016
 			legacy_fglrx_buggy_driver = true;
+
 		if (strstr(vendor, "NVIDIA Corporation"))
 			nvidia_buggy_driver = true;
-		if (strstr(vendor, "Intel"))
-			intel_buggy_driver = true;
-		if (strstr(vendor, "X.Org") || strstr(vendor, "nouveau")) // Note: it might actually catch nouveau too, but bugs are likely to be the same anyway
-			mesa_amd_buggy_driver = true;
-		if (strstr(vendor, "VMware")) // Assume worst case because I don't know the real status
-			mesa_amd_buggy_driver = intel_buggy_driver = true;
 
 #ifdef _WIN32
-		buggy_sso_dual_src = intel_buggy_driver || fglrx_buggy_driver || legacy_fglrx_buggy_driver;
+		if (strstr(vendor, "Intel"))
+			intel_buggy_driver = true;
 #else
-		buggy_sso_dual_src = fglrx_buggy_driver || legacy_fglrx_buggy_driver;
+		// On linux assumes the free driver if it isn't nvidia or amd pro driver
+		mesa_buggy_driver = !nvidia_buggy_driver && !fglrx_buggy_driver;
 #endif
+
+		buggy_sso_dual_src = intel_buggy_driver || legacy_fglrx_buggy_driver;
 
 		if (theApp.GetConfigI("override_geometry_shader") != -1) {
 			found_geometry_shader = theApp.GetConfigB("override_geometry_shader");
@@ -305,6 +310,7 @@ namespace GLLoader {
 				string ext((const char*)glGetStringi(GL_EXTENSIONS, i));
 				// Bonus
 				if (ext.compare("GL_EXT_texture_filter_anisotropic") == 0) found_GL_EXT_texture_filter_anisotropic = true;
+				if (ext.compare("GL_NVX_gpu_memory_info") == 0) found_GL_NVX_gpu_memory_info = true;
 				// GL4.0
 				if (ext.compare("GL_ARB_gpu_shader5") == 0) found_GL_ARB_gpu_shader5 = true;
 				if (ext.compare("GL_ARB_draw_buffers_blend") == 0) found_GL_ARB_draw_buffers_blend = true;
@@ -332,6 +338,7 @@ namespace GLLoader {
 		}
 
 		bool status = true;
+		bool mandatory_hw = static_cast<GSRendererType>(theApp.GetConfigI("Renderer")) == GSRendererType::OGL_HW;
 
 		// Bonus
 		status &= status_and_override(found_GL_EXT_texture_filter_anisotropic, "GL_EXT_texture_filter_anisotropic");
@@ -354,13 +361,13 @@ namespace GLLoader {
 		// GL4.5
 		status &= status_and_override(found_GL_ARB_clip_control, "GL_ARB_clip_control", true);
 		status &= status_and_override(found_GL_ARB_direct_state_access, "GL_ARB_direct_state_access", true);
-		status &= status_and_override(found_GL_ARB_texture_barrier, "GL_ARB_texture_barrier", true);
+		status &= status_and_override(found_GL_ARB_texture_barrier, "GL_ARB_texture_barrier", mandatory_hw);
 		status &= status_and_override(found_GL_ARB_get_texture_sub_image, "GL_ARB_get_texture_sub_image");
 
 #ifdef _WIN32
 		if (status) {
 			if (fglrx_buggy_driver) {
-				fprintf(stderr, "OpenGL renderer is slow on AMD GPU due to inefficient driver. Sorry.");
+				fprintf(stderr, "OpenGL renderer is slow on AMD GPU due to inefficient driver. Sorry.\n");
 			}
 		}
 #endif

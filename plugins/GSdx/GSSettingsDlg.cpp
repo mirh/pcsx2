@@ -188,7 +188,31 @@ void GSSettingsDlg::OnInit()
 	AddTooltip(IDC_LOGZ);
 	AddTooltip(IDC_LARGE_FB);
 
+	UpdateFilteringCombobox();
 	UpdateControls();
+}
+
+void GSSettingsDlg::UpdateFilteringCombobox()
+{
+	INT_PTR i;
+	ComboBoxGetSelData(IDC_RENDERER, i);
+	bool opengl = static_cast<GSRendererType>(i) == GSRendererType::OGL_HW;
+	bool hw_mode = opengl || static_cast<GSRendererType>(i) == GSRendererType::DX1011_HW || static_cast<GSRendererType>(i) == GSRendererType::DX9_HW;
+	if (!hw_mode)
+		return;
+
+	uint8 filter = (ComboBoxGetSelData(IDC_FILTER, i)) ? static_cast<uint8>(i) : static_cast<uint8>(theApp.GetConfigI("filter"));
+	if (!opengl) //Currently Trilinear is only exclusive to OpenGL, remove those combobox items when any other renderer is used
+	{
+		auto head = theApp.m_gs_filter.begin();
+		auto tail = head + static_cast<uint8>(Filtering::Trilinear);
+		vector<GSSetting> list(head, tail);
+		ComboBoxInit(IDC_FILTER, list, std::max(uint8(Filtering::Nearest), std::min(filter, uint8(Filtering::Bilinear_PS2))));
+	}
+	else
+	{
+		ComboBoxInit(IDC_FILTER, theApp.m_gs_filter, filter);
+	}
 }
 
 bool GSSettingsDlg::OnCommand(HWND hWnd, UINT id, UINT code)
@@ -203,6 +227,12 @@ bool GSSettingsDlg::OnCommand(HWND hWnd, UINT id, UINT code)
 			}
 			break;
 		case IDC_RENDERER:
+			if (code == CBN_SELCHANGE)
+			{
+				UpdateFilteringCombobox();
+				UpdateControls();
+			}
+			break;
 		case IDC_UPSCALE_MULTIPLIER:
 		case IDC_FILTER:
 			if (code == CBN_SELCHANGE)
@@ -282,11 +312,13 @@ bool GSSettingsDlg::OnCommand(HWND hWnd, UINT id, UINT code)
 			theApp.SetConfig("fba", (int)IsDlgButtonChecked(m_hWnd, IDC_FBA));
 			theApp.SetConfig("aa1", (int)IsDlgButtonChecked(m_hWnd, IDC_AA1));
 			theApp.SetConfig("mipmap", (int)IsDlgButtonChecked(m_hWnd, IDC_MIPMAP));
-			theApp.SetConfig("resx", (int)SendMessage(GetDlgItem(m_hWnd, IDC_RESX), UDM_GETPOS, 0, 0));
-			theApp.SetConfig("resy", (int)SendMessage(GetDlgItem(m_hWnd, IDC_RESY), UDM_GETPOS, 0, 0));
-			theApp.SetConfig("extrathreads", (int)SendMessage(GetDlgItem(m_hWnd, IDC_SWTHREADS), UDM_GETPOS, 0, 0));
 			theApp.SetConfig("accurate_date", (int)IsDlgButtonChecked(m_hWnd, IDC_ACCURATE_DATE));
 			theApp.SetConfig("UserHacks", (int)IsDlgButtonChecked(m_hWnd, IDC_HACKS_ENABLED));
+
+			// The LOWORD returned by UDM_GETPOS automatically restricts the value to its input range.
+			theApp.SetConfig("extrathreads", LOWORD(SendMessage(GetDlgItem(m_hWnd, IDC_SWTHREADS), UDM_GETPOS, 0, 0)));
+			theApp.SetConfig("resx", LOWORD(SendMessage(GetDlgItem(m_hWnd, IDC_RESX), UDM_GETPOS, 0, 0)));
+			theApp.SetConfig("resy", LOWORD(SendMessage(GetDlgItem(m_hWnd, IDC_RESY), UDM_GETPOS, 0, 0)));
 		}
 		break;
 	}
@@ -386,10 +418,9 @@ void GSSettingsDlg::UpdateControls()
 		ShowWindow(GetDlgItem(m_hWnd, IDC_ACCURATE_DATE), ogl ? SW_SHOW : SW_HIDE);
 		ShowWindow(GetDlgItem(m_hWnd, IDC_ACCURATE_BLEND_UNIT), ogl ? SW_SHOW : SW_HIDE);
 		ShowWindow(GetDlgItem(m_hWnd, IDC_ACCURATE_BLEND_UNIT_TEXT), ogl ? SW_SHOW : SW_HIDE);
-		ShowWindow(GetDlgItem(m_hWnd, IDC_TC_DEPTH), ogl ? SW_SHOW : SW_HIDE);
 
 		EnableWindow(GetDlgItem(m_hWnd, IDC_CRC_LEVEL), hw);
-		EnableWindow(GetDlgItem(m_hWnd, IDC_LARGE_FB), integer_scaling > 1 && hw);
+		EnableWindow(GetDlgItem(m_hWnd, IDC_LARGE_FB), integer_scaling != 1 && hw);
 		EnableWindow(GetDlgItem(m_hWnd, IDC_CRC_LEVEL_TEXT), hw);
 		EnableWindow(GetDlgItem(m_hWnd, IDC_OPENCL_DEVICE), ocl);
 		EnableWindow(GetDlgItem(m_hWnd, IDC_RESX), hw && !integer_scaling);
@@ -666,9 +697,10 @@ void GSHacksDlg::OnInit()
 	CheckDlgButton(m_hWnd, IDC_ALPHASTENCIL, theApp.GetConfigB("UserHacks_AlphaStencil"));
 	CheckDlgButton(m_hWnd, IDC_PRELOAD_GS, theApp.GetConfigB("preload_frame_with_gs_data"));
 	CheckDlgButton(m_hWnd, IDC_ALIGN_SPRITE, theApp.GetConfigB("UserHacks_align_sprite_X"));
-	CheckDlgButton(m_hWnd, IDC_SAFE_FBMASK, theApp.GetConfigB("UserHacks_safe_fbmask"));
 	CheckDlgButton(m_hWnd, IDC_TC_DEPTH, theApp.GetConfigB("UserHacks_DisableDepthSupport"));
 	CheckDlgButton(m_hWnd, IDC_FAST_TC_INV, theApp.GetConfigB("UserHacks_DisablePartialInvalidation"));
+	CheckDlgButton(m_hWnd, IDC_AUTO_FLUSH, theApp.GetConfigB("UserHacks_AutoFlush"));
+	CheckDlgButton(m_hWnd, IDC_UNSCALE_POINT_LINE, theApp.GetConfigB("UserHacks_unscale_point_line"));
 
 	ComboBoxInit(IDC_ROUND_SPRITE, theApp.m_gs_hack, theApp.GetConfigI("UserHacks_round_sprite_offset"));
 	ComboBoxInit(IDC_SPRITEHACK, theApp.m_gs_hack, theApp.GetConfigI("UserHacks_SpriteHack"));
@@ -684,8 +716,8 @@ void GSHacksDlg::OnInit()
 
 	ShowWindow(GetDlgItem(m_hWnd, IDC_ALPHASTENCIL), ogl ? SW_HIDE : SW_SHOW);
 	ShowWindow(GetDlgItem(m_hWnd, IDC_ALPHAHACK), ogl ? SW_HIDE : SW_SHOW);
-	ShowWindow(GetDlgItem(m_hWnd, IDC_SAFE_FBMASK), ogl ? SW_SHOW : SW_HIDE);
 	EnableWindow(GetDlgItem(m_hWnd, IDC_TC_DEPTH), ogl);
+	EnableWindow(GetDlgItem(m_hWnd, IDC_UNSCALE_POINT_LINE), ogl && !native);
 	EnableWindow(GetDlgItem(m_hWnd, IDC_MSAACB), !ogl);
 	EnableWindow(GetDlgItem(m_hWnd, IDC_MSAA_TEXT), !ogl);
 	EnableWindow(GetDlgItem(m_hWnd, IDC_SPRITEHACK), !native);
@@ -711,9 +743,10 @@ void GSHacksDlg::OnInit()
 	AddTooltip(IDC_TCOFFSETY);
 	AddTooltip(IDC_TCOFFSETY2);
 	AddTooltip(IDC_PRELOAD_GS);
-	AddTooltip(IDC_SAFE_FBMASK);
 	AddTooltip(IDC_TC_DEPTH);
 	AddTooltip(IDC_FAST_TC_INV);
+	AddTooltip(IDC_AUTO_FLUSH);
+	AddTooltip(IDC_UNSCALE_POINT_LINE);
 }
 
 void GSHacksDlg::UpdateControls()
@@ -748,9 +781,10 @@ bool GSHacksDlg::OnMessage(UINT message, WPARAM wParam, LPARAM lParam)
 			theApp.SetConfig("UserHacks_AlphaStencil", (int)IsDlgButtonChecked(m_hWnd, IDC_ALPHASTENCIL));
 			theApp.SetConfig("preload_frame_with_gs_data", (int)IsDlgButtonChecked(m_hWnd, IDC_PRELOAD_GS));
 			theApp.SetConfig("Userhacks_align_sprite_X", (int)IsDlgButtonChecked(m_hWnd, IDC_ALIGN_SPRITE));
-			theApp.SetConfig("UserHacks_safe_fbmask", (int)IsDlgButtonChecked(m_hWnd, IDC_SAFE_FBMASK));
 			theApp.SetConfig("UserHacks_DisableDepthSupport", (int)IsDlgButtonChecked(m_hWnd, IDC_TC_DEPTH));
 			theApp.SetConfig("UserHacks_DisablePartialInvalidation", (int)IsDlgButtonChecked(m_hWnd, IDC_FAST_TC_INV));
+			theApp.SetConfig("UserHacks_AutoFlush", (int)IsDlgButtonChecked(m_hWnd, IDC_AUTO_FLUSH));
+			theApp.SetConfig("UserHacks_unscale_point_line", (int)IsDlgButtonChecked(m_hWnd, IDC_UNSCALE_POINT_LINE));
 
 			unsigned int TCOFFSET  =  SendMessage(GetDlgItem(m_hWnd, IDC_TCOFFSETX), UDM_GETPOS, 0, 0) & 0xFFFF;
 						 TCOFFSET |= (SendMessage(GetDlgItem(m_hWnd, IDC_TCOFFSETY), UDM_GETPOS, 0, 0) & 0xFFFF) << 16;
@@ -758,6 +792,11 @@ bool GSHacksDlg::OnMessage(UINT message, WPARAM wParam, LPARAM lParam)
 			theApp.SetConfig("UserHacks_TCOffset", TCOFFSET);
 
 			EndDialog(m_hWnd, id);
+		} break;
+
+		case IDCANCEL:
+		{
+			EndDialog(m_hWnd, IDCANCEL);
 		} break;
 		}
 

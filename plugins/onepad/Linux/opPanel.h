@@ -65,10 +65,10 @@ class opPanel : public wxPanel
     bool m_show_image[NB_IMG];
     int m_left_cursor_x, m_left_cursor_y, m_right_cursor_x, m_right_cursor_y;
     DECLARE_EVENT_TABLE()
-    void OnPaint(wxPaintEvent& event);
+    void OnPaint(wxPaintEvent &event);
 
 public:
-    opPanel(wxWindow*, wxWindowID, const wxPoint&, const wxSize&);
+    opPanel(wxWindow *, wxWindowID, const wxPoint &, const wxSize &);
     void HideImg(int);
     void ShowImg(int);
     void MoveJoystick(int, int);

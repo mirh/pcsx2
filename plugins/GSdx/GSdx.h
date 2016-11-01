@@ -35,7 +35,8 @@ class GSdxApp
 public:
 	GSdxApp();
 
-    void* GetModuleHandlePtr();
+	void Init();
+	void* GetModuleHandlePtr();
 
 #ifdef _WIN32
  	HMODULE GetModuleHandle() {return (HMODULE)GetModuleHandlePtr();}
@@ -83,6 +84,5 @@ public:
 
 struct GSDXError {};
 struct GSDXRecoverableError : GSDXError {};
-struct GSDXErrorOOM : GSDXError {};
 
 extern GSdxApp theApp;

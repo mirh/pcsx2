@@ -218,23 +218,6 @@ bool GSC_CrashBandicootWoC(const GSFrameInfo& fi, int& skip)
 	return true;
 }
 
-bool GSC_ResidentEvil4(const GSFrameInfo& fi, int& skip)
-{
-	if(skip == 0)
-	{
-		if(fi.TME && fi.FBP == 0x03100 && fi.FPSM == PSM_PSMCT32 && fi.TBP0 == 0x01c00 && fi.TPSM == PSM_PSMZ24)
-		{
-			skip = 176;
-		}
-		else if(fi.TME && fi.FBP ==0x03100 && (fi.TBP0==0x2a00 ||fi.TBP0==0x3480) && fi.TPSM == PSM_PSMCT32 && fi.FBMSK == 0)
-		{
-			skip = 1;
-		}
-	}
-
-	return true;
-}
-
 bool GSC_SacredBlaze(const GSFrameInfo& fi, int& skip)
 {
 	//Fix Sacred Blaze rendering glitches
@@ -355,44 +338,6 @@ bool GSC_Genji(const GSFrameInfo& fi, int& skip)
 	}
 	else
 	{
-	}
-
-	return true;
-}
-
-bool GSC_HauntingGround(const GSFrameInfo& fi, int& skip)
-{
-	if(skip == 0)
-	{
-		if(fi.TME && fi.FPSM == fi.TPSM && fi.TPSM == PSM_PSMCT16S && fi.FBMSK == 0x03FFF)
-		{
-			if (Dx_only)
-				skip = 1;
-			else
-				return false;
-		}
-		else if(fi.TME && fi.FBP == 0x3000 && fi.TBP0 == 0x3380)
-		{
-			skip = 1; // bloom
-		}
-		else if(fi.TME && (fi.FBP ==0x2200) && (fi.TBP0 ==0x3a80) && fi.FPSM == fi.TPSM && fi.TPSM == PSM_PSMCT32)
-		{
-			skip = 1;
-		}
-		else if(fi.FBP ==0x2200 && fi.TBP0==0x3000 && fi.TPSM == PSM_PSMT8H && fi.FBMSK == 0)
-		{
-			skip = 1;
-		}
-		else if(fi.TME)
-		{
-			// depth textures (bully, mgs3s1 intro, Front Mission 5)
-			if( (fi.TPSM == PSM_PSMZ32 || fi.TPSM == PSM_PSMZ24 || fi.TPSM == PSM_PSMZ16 || fi.TPSM == PSM_PSMZ16S) ||
-				// General, often problematic post processing
-				(GSUtil::HasSharedBits(fi.FBP, fi.FPSM, fi.TBP0, fi.TPSM)) )
-			{
-				skip = 1;
-			}
-		}
 	}
 
 	return true;
@@ -820,35 +765,6 @@ bool GSC_MidnightClub3(const GSFrameInfo& fi, int& skip)
 	return true;
 }
 
-bool GSC_TalesOfLegendia(const GSFrameInfo& fi, int& skip)
-{
-	if(skip == 0)
-	{
-		if(fi.TME && (fi.FBP == 0x3f80 || fi.FBP == 0x03fa0) && fi.FPSM == PSM_PSMCT32 && fi.TPSM == PSM_PSMT8)
-		{
-			skip = 3; //3, 9
-		}
-		if(fi.TME && fi.FBP == 0x3800 && fi.FPSM == PSM_PSMCT32 && fi.TPSM == PSM_PSMZ32)
-		{
-			skip = 2;
-		}
-		if(fi.TME && fi.FBP && fi.FPSM == PSM_PSMCT32 && fi.TBP0 == 0x3d80)
-		{
-			skip = 1;
-		}
-		if(fi.TME && fi.FBP ==0x1c00 && (fi.TBP0==0x2e80 ||fi.TBP0==0x2d80) && fi.TPSM ==0  && fi.FBMSK == 0xff000000)
-		{
-			skip = 1;
-		}
-		if(!fi.TME && fi.FBP ==0x2a00 && (fi.TBP0==0x1C00 ) && fi.TPSM ==0  && fi.FBMSK == 0x00FFFFFF)
-		{
-			skip = 1;
-		}
-	}
-
-	return true;
-}
-
 bool GSC_NanoBreaker(const GSFrameInfo& fi, int& skip)
 {
 	if(skip == 0)
@@ -1066,19 +982,6 @@ bool GSC_FightingBeautyWulong(const GSFrameInfo& fi, int& skip)
 	if(skip == 0)
 	{
 		if(fi.TME && (fi.TBP0 ==0x0700 || fi.TBP0 ==0x0a80) && (fi.TPSM == PSM_PSMCT32 || fi.TPSM == PSM_PSMCT24))
-		{
-			skip = 1;
-		}
-	}
-
-	return true;
-}
-
-bool GSC_GTASanAndreas(const GSFrameInfo& fi, int& skip)
-{
-	if(skip == 0)
-	{
-		if(fi.TME && (fi.FBP ==0x0a00 || fi.FBP ==0x08c0) && (fi.TBP0 ==0x1b80 || fi.TBP0 ==0x1a40) && fi.FPSM == fi.TPSM && fi.TPSM == PSM_PSMCT32)
 		{
 			skip = 1;
 		}
@@ -1309,6 +1212,87 @@ bool GSC_SteambotChronicles(const GSFrameInfo& fi, int& skip)
 ////////////////////////////////////////////////////////////////////////////////
 // Correctly emulated on OpenGL but can be used as potential speed hack
 ////////////////////////////////////////////////////////////////////////////////
+
+bool GSC_HauntingGround(const GSFrameInfo& fi, int& skip)
+{
+	if(skip == 0)
+	{
+		if(fi.TME && fi.FPSM == fi.TPSM && fi.TPSM == PSM_PSMCT16S && fi.FBMSK == 0x03FFF)
+		{
+			skip = 1;
+		}
+		else if(fi.TME && fi.FBP == 0x3000 && fi.TBP0 == 0x3380)
+		{
+			skip = 1; // bloom
+		}
+		else if(fi.TME && (fi.FBP ==0x2200) && (fi.TBP0 ==0x3a80) && fi.FPSM == fi.TPSM && fi.TPSM == PSM_PSMCT32)
+		{
+			skip = 1;
+		}
+		else if(fi.FBP ==0x2200 && fi.TBP0==0x3000 && fi.TPSM == PSM_PSMT8H && fi.FBMSK == 0)
+		{
+			skip = 1;
+		}
+		else if(fi.TME)
+		{
+			// depth textures (bully, mgs3s1 intro, Front Mission 5)
+			if( (fi.TPSM == PSM_PSMZ32 || fi.TPSM == PSM_PSMZ24 || fi.TPSM == PSM_PSMZ16 || fi.TPSM == PSM_PSMZ16S) ||
+				// General, often problematic post processing
+				(GSUtil::HasSharedBits(fi.FBP, fi.FPSM, fi.TBP0, fi.TPSM)) )
+			{
+				skip = 1;
+			}
+		}
+	}
+
+	return true;
+}
+
+bool GSC_TalesOfLegendia(const GSFrameInfo& fi, int& skip)
+{
+	if(skip == 0)
+	{
+		if(fi.TME && (fi.FBP == 0x3f80 || fi.FBP == 0x03fa0) && fi.FPSM == PSM_PSMCT32 && fi.TPSM == PSM_PSMT8)
+		{
+			skip = 3; //3, 9
+		}
+		if(fi.TME && fi.FBP == 0x3800 && fi.FPSM == PSM_PSMCT32 && fi.TPSM == PSM_PSMZ32)
+		{
+			skip = 2;
+		}
+		if(fi.TME && fi.FBP && fi.FPSM == PSM_PSMCT32 && fi.TBP0 == 0x3d80)
+		{
+			skip = 1;
+		}
+		if(fi.TME && fi.FBP ==0x1c00 && (fi.TBP0==0x2e80 ||fi.TBP0==0x2d80) && fi.TPSM ==0  && fi.FBMSK == 0xff000000)
+		{
+			skip = 1;
+		}
+		if(!fi.TME && fi.FBP ==0x2a00 && (fi.TBP0==0x1C00 ) && fi.TPSM ==0  && fi.FBMSK == 0x00FFFFFF)
+		{
+			skip = 1;
+		}
+	}
+
+	return true;
+}
+
+bool GSC_ResidentEvil4(const GSFrameInfo& fi, int& skip)
+{
+	if(skip == 0)
+	{
+		if(fi.TME && fi.FBP == 0x03100 && fi.FPSM == PSM_PSMCT32 && fi.TBP0 == 0x01c00 && fi.TPSM == PSM_PSMZ24)
+		{
+			skip = 176;
+		}
+		else if(fi.TME && fi.FBP ==0x03100 && (fi.TBP0==0x2a00 ||fi.TBP0==0x3480) && fi.TPSM == PSM_PSMCT32 && fi.FBMSK == 0)
+		{
+			skip = 1;
+		}
+	}
+
+	return true;
+}
 
 bool GSC_TalesOfAbyss(const GSFrameInfo& fi, int& skip)
 {
@@ -2150,6 +2134,19 @@ bool GSC_Grandia3(const GSFrameInfo& fi, int& skip)
 	return true;
 }
 
+bool GSC_GTASanAndreas(const GSFrameInfo& fi, int& skip)
+{
+	if(skip == 0)
+	{
+		if(fi.TME && (fi.FBP ==0x0a00 || fi.FBP ==0x08c0) && (fi.TBP0 ==0x1b80 || fi.TBP0 ==0x1a40) && fi.FPSM == fi.TPSM && fi.TPSM == PSM_PSMCT32)
+		{
+			skip = 1;
+		}
+	}
+
+	return true;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Aggresive only hack
 ////////////////////////////////////////////////////////////////////////////////
@@ -2463,8 +2460,6 @@ void GSState::SetupCrcHack()
 		lut[CRC::GetaWay] = GSC_GetaWay;
 		lut[CRC::GiTS] = GSC_GiTS;
 		lut[CRC::GodHand] = GSC_GodHand;
-		lut[CRC::GTASanAndreas] = GSC_GTASanAndreas;
-		lut[CRC::HauntingGround] = GSC_HauntingGround;
 		lut[CRC::HeavyMetalThunder] = GSC_HeavyMetalThunder;
 		lut[CRC::HummerBadlands] = GSC_HummerBadlands;
 		lut[CRC::IkkiTousen] = GSC_IkkiTousen;
@@ -2479,7 +2474,6 @@ void GSState::SetupCrcHack()
 		lut[CRC::Oneechanbara2Special] = GSC_Oneechanbara2Special;
 		lut[CRC::Onimusha3] = GSC_Onimusha3;
 		lut[CRC::RedDeadRevolver] = GSC_RedDeadRevolver;
-		lut[CRC::ResidentEvil4] = GSC_ResidentEvil4;
 		lut[CRC::SacredBlaze] = GSC_SacredBlaze;
 		lut[CRC::SakuraTaisen] = GSC_SakuraTaisen;
 		lut[CRC::SakuraWarsSoLongMyLove] = GSC_SakuraWarsSoLongMyLove;
@@ -2492,7 +2486,6 @@ void GSState::SetupCrcHack()
 		lut[CRC::Spartan] = GSC_Spartan;
 		lut[CRC::StarWarsForceUnleashed] = GSC_StarWarsForceUnleashed;
 		lut[CRC::SteambotChronicles] = GSC_SteambotChronicles;
-		lut[CRC::TalesOfLegendia] = GSC_TalesOfLegendia;
 		lut[CRC::TalesofSymphonia] = GSC_TalesofSymphonia;
 		lut[CRC::TimeSplitters2] = GSC_TimeSplitters2;
 		lut[CRC::TombRaiderAnniversary] = GSC_TombRaider;
@@ -2525,9 +2518,14 @@ void GSState::SetupCrcHack()
 		lut[CRC::ICO] = GSC_ICO;
 		lut[CRC::LordOfTheRingsTwoTowers] = GSC_LordOfTheRingsTwoTowers;
 		lut[CRC::Okami] = GSC_Okami;
+		lut[CRC::ResidentEvil4] = GSC_ResidentEvil4;
 		lut[CRC::SimpsonsGame] = GSC_SimpsonsGame;
 		lut[CRC::SuikodenTactics] = GSC_SuikodenTactics;
+		lut[CRC::TalesOfLegendia] = GSC_TalesOfLegendia;
 		lut[CRC::XE3] = GSC_XE3;
+
+		// Depth + Texture cache issue + Date (AKA a real mess)
+		lut[CRC::HauntingGround] = GSC_HauntingGround;
 
 		// Not tested but must be fixed with texture shuffle
 		lut[CRC::BigMuthaTruckers] = GSC_BigMuthaTruckers;
@@ -2578,6 +2576,9 @@ void GSState::SetupCrcHack()
 		lut[CRC::GTConcept] = GSC_GTConcept;
 		lut[CRC::TalesOfAbyss] = GSC_TalesOfAbyss;
 		lut[CRC::Tekken5] = GSC_Tekken5;
+
+		// RW frame buffer. UserHacks_AutoFlush allow to emulate it correctly
+		lut[CRC::GTASanAndreas] = GSC_GTASanAndreas;
 	}
 
 	m_gsc = lut[m_game.title];

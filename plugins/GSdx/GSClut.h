@@ -30,6 +30,10 @@ class GSLocalMemory;
 
 class alignas(32) GSClut : public GSAlignedClass<32>
 {
+	static GSVector4i m_bm;
+	static GSVector4i m_gm;
+	static GSVector4i m_rm;
+
 	GSLocalMemory* m_mem;
 
 	uint32 m_CBP[2];
@@ -93,10 +97,13 @@ class alignas(32) GSClut : public GSAlignedClass<32>
 	static void Expand16(const uint16* RESTRICT src, uint32* RESTRICT dst, int w, const GIFRegTEXA& TEXA);
 
 public:
+	static void InitVectors();
+
 	GSClut(GSLocalMemory* mem);
 	virtual ~GSClut();
 
 	void Invalidate();
+	void Invalidate(uint32 block);
 	bool WriteTest(const GIFRegTEX0& TEX0, const GIFRegTEXCLUT& TEXCLUT);
 	void Write(const GIFRegTEX0& TEX0, const GIFRegTEXCLUT& TEXCLUT);
 	//void Read(const GIFRegTEX0& TEX0);

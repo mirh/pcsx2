@@ -50,7 +50,7 @@ bool GSDeviceSW::Reset(int w, int h)
 
 GSTexture* GSDeviceSW::CreateSurface(int type, int w, int h, bool msaa, int format)
 {
-	if(format != 0) return NULL; // there is only one format
+	ASSERT(format == 0);
 
 	return new GSTextureSW(type, w, h);
 }
@@ -80,9 +80,9 @@ void GSDeviceSW::ClearRenderTarget(GSTexture* t, uint32 c)
 	Clear(t, c);
 }
 
-void GSDeviceSW::ClearDepth(GSTexture* t, float c)
+void GSDeviceSW::ClearDepth(GSTexture* t)
 {
-	Clear(t, *(uint32*)&c);
+	Clear(t, 0);
 }
 
 void GSDeviceSW::ClearStencil(GSTexture* t, uint8 c)
@@ -349,8 +349,11 @@ void GSDeviceSW::OMSetRenderTargets(GSTexture* rt, GSTexture* ds, const GSVector
 
 //
 
-void GSDeviceSW::DoMerge(GSTexture* sTex[2], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect, bool slbg, bool mmod, const GSVector4& c)
+void GSDeviceSW::DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect, const GSRegPMODE& PMODE, const GSRegEXTBUF& EXTBUF, const GSVector4& c)
 {
+	bool slbg = PMODE.SLBG;
+	bool mmod = PMODE.MMOD;
+
 	ClearRenderTarget(dTex, c);
 
 	if(sTex[1] && !slbg)

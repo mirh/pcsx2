@@ -187,6 +187,17 @@ typedef void (APIENTRYP PFNGLTEXTUREBARRIERPROC) (void);
 typedef void (APIENTRYP PFNGLGETTEXTUREIMAGEPROC) (GLuint texture, GLint level, GLenum format, GLenum type, GLsizei bufSize, void *pixels);
 #endif /* GL_VERSION_4_5 */
 
+#ifndef GL_NVX_gpu_memory_info
+#define GL_NVX_gpu_memory_info 1
+#define GL_GPU_MEMORY_INFO_DEDICATED_VIDMEM_NVX 0x9047
+#define GL_GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX 0x9048
+#define GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX 0x9049
+#define GL_GPU_MEMORY_INFO_EVICTION_COUNT_NVX 0x904A
+#define GL_GPU_MEMORY_INFO_EVICTED_MEMORY_NVX 0x904B
+#endif /* GL_NVX_gpu_memory_info */
+
+// **********************  End of the extra header ******************* //
+
 // Note: glActiveTexture & glBlendColor aren't included in the win GL ABI.
 // (maybe gl.h is outdated, or my setup is wrong)
 // Anyway, let's just keep the mangled function pointer for those 2 functions.
@@ -307,6 +318,7 @@ extern PFNGLCOPYTEXTURESUBIMAGE2DPROC           glCopyTextureSubImage2D;
 extern PFNGLBINDTEXTUREUNITPROC                 glBindTextureUnit;
 extern PFNGLGETTEXTUREIMAGEPROC                 glGetTextureImage;
 extern PFNGLTEXTUREPARAMETERIPROC               glTextureParameteri;
+extern PFNGLGENERATETEXTUREMIPMAPPROC           glGenerateTextureMipmap;
 
 extern PFNGLCREATEFRAMEBUFFERSPROC              glCreateFramebuffers;
 extern PFNGLCLEARNAMEDFRAMEBUFFERFVPROC         glClearNamedFramebufferfv;
@@ -341,7 +353,7 @@ namespace GLLoader {
 
 	extern bool fglrx_buggy_driver;
 	extern bool legacy_fglrx_buggy_driver;
-	extern bool mesa_amd_buggy_driver;
+	extern bool mesa_buggy_driver;
 	extern bool nvidia_buggy_driver;
 	extern bool intel_buggy_driver;
 	extern bool buggy_sso_dual_src;
@@ -354,4 +366,6 @@ namespace GLLoader {
 	extern bool found_GL_ARB_clear_texture;
 	extern bool found_GL_ARB_direct_state_access;
 	extern bool found_GL_EXT_texture_filter_anisotropic;
+	extern bool found_GL_NVX_gpu_memory_info;
+	extern bool found_GL_ATI_meminfo;
 }

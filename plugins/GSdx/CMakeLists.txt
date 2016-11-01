@@ -11,11 +11,14 @@ set(Output GSdx)
 
 set(CommonFlags
     -fno-operator-names # because Xbyak uses and()/xor()/or()/not() function
-    -fno-strict-aliasing
     -Wno-unknown-pragmas
     -Wno-parentheses
     -Wunused-variable # __dummy variable need to be investigated
     )
+
+if(USE_ICC)
+	set(CommonFlags "${CommonFlags} -restrict")
+endif()
 
 set(GSdxFinalFlags ${CommonFlags})
 
@@ -185,13 +188,10 @@ set(GSdxFinalSources
 
 set(GSdxFinalLibs
     ${X11_LIBRARIES}
-)
-
-set(GSdxFinalLibs ${GSdxFinalLibs}
     ${OPENGL_LIBRARIES}
     ${GTK2_LIBRARIES}
     ${LIBC_LIBRARIES}
-    ${PNG_LIBRARY}
+    ${PNG_LIBRARIES}
 )
 
 if(EGL_API AND EGL_FOUND)

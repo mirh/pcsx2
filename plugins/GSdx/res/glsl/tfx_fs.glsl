@@ -26,6 +26,9 @@
 
 #ifdef FRAGMENT_SHADER
 
+#if !defined(BROKEN_DRIVER) && defined(GL_ARB_enhanced_layouts) && GL_ARB_enhanced_layouts
+layout(location = 0)
+#endif
 in SHADER
 {
     vec4 t_float;
@@ -75,7 +78,30 @@ layout(early_fragment_tests) in;
 
 vec4 sample_c(vec2 uv)
 {
+#if PS_TEX_IS_FB == 1
+    return texelFetch(RtSampler, ivec2(gl_FragCoord.xy), 0);
+#else
+
+#if PS_AUTOMATIC_LOD == 1
     return texture(TextureSampler, uv);
+#elif PS_MANUAL_LOD == 1
+    // FIXME add LOD: K - ( LOG2(Q) * (1 << L))
+    float K = MinMax.x;
+    float L = MinMax.y;
+    float bias = MinMax.z;
+    float max_lod = MinMax.w;
+
+    float gs_lod = K - log2(abs(PSin.t_float.w)) * L;
+    // FIXME max useful ?
+    //float lod = max(min(gs_lod, max_lod) - bias, 0.0f);
+    float lod = min(gs_lod, max_lod) - bias;
+
+    return textureLod(TextureSampler, uv, lod);
+#else
+    return textureLod(TextureSampler, uv, 0); // No lod
+#endif
+
+#endif
 }
 
 vec4 sample_p(float idx)
@@ -478,32 +504,45 @@ vec4 tfx(vec4 T, vec4 C)
 
 void atst(vec4 C)
 {
-    // FIXME use integer cmp
     float a = C.a;
 
-#if (PS_ATST == 0) // never
-    discard;
-#elif (PS_ATST == 1) // always
-    // nothing to do
-#elif (PS_ATST == 2) // l
-    if ((AREF - a - 0.5f) < 0.0f)
-        discard;
-#elif (PS_ATST == 3 ) // le
-    if ((AREF - a + 0.5f) < 0.0f)
-        discard;
-#elif (PS_ATST == 4) // e
-    if ((0.5f - abs(a - AREF)) < 0.0f)
-        discard;
-#elif (PS_ATST == 5) // ge
-    if ((a-AREF + 0.5f) < 0.0f)
-        discard;
-#elif (PS_ATST == 6) // g
-    if ((a-AREF - 0.5f) < 0.0f)
-        discard;
-#elif (PS_ATST == 7) // ne
-    if ((abs(a - AREF) - 0.5f) < 0.0f)
-        discard;
+#if 0
+    switch(Uber_ATST) {
+        case 0:
+            break;
+        case 1:
+            if (a > AREF) discard;
+            break;
+        case 2:
+            if (a < AREF) discard;
+            break;
+        case 3:
+            if (abs(a - AREF) > 0.5f) discard;
+            break;
+        case 4:
+            if (abs(a - AREF) < 0.5f) discard;
+            break;
+    }
+
+
 #endif
+
+#if 1
+
+#if (PS_ATST == 0)
+    // nothing to do
+#elif (PS_ATST == 1)
+    if (a > AREF) discard;
+#elif (PS_ATST == 2)
+    if (a < AREF) discard;
+#elif (PS_ATST == 3)
+    if (abs(a - AREF) > 0.5f) discard;
+#elif (PS_ATST == 4)
+    if (abs(a - AREF) < 0.5f) discard;
+#endif
+
+#endif
+
 }
 
 void fog(inout vec4 C, float f)

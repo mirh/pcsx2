@@ -20,6 +20,7 @@
  */
 
 #include "stdafx.h"
+#include "GSState.h"
 #include "GSDeviceOGL.h"
 #include "GLState.h"
 #include "GSUtil.h"
@@ -45,7 +46,6 @@ static const uint32 g_ps_cb_index         = 21;
 static const uint32 g_gs_cb_index         = 22;
 
 bool  GSDeviceOGL::m_debug_gl_call = false;
-int   GSDeviceOGL::s_n = 0;
 int   GSDeviceOGL::m_shader_inst = 0;
 int   GSDeviceOGL::m_shader_reg  = 0;
 FILE* GSDeviceOGL::m_debug_gl_file = NULL;
@@ -74,9 +74,15 @@ GSDeviceOGL::GSDeviceOGL()
 	memset(&m_profiler, 0 , sizeof(m_profiler));
 	GLState::Clear();
 
+	m_mipmap = theApp.GetConfigI("mipmap");
+	m_filter = static_cast<Filtering>(theApp.GetConfigI("filter"));
+
 	// Reset the debug file
 	#ifdef ENABLE_OGL_DEBUG
-	m_debug_gl_file = fopen("GSdx_opengl_debug.txt","w");
+	if (static_cast<GSRendererType>(theApp.GetConfigI("Renderer")) == GSRendererType::OGL_SW)
+		m_debug_gl_file = fopen("GSdx_opengl_debug_sw.txt","w");
+	else
+		m_debug_gl_file = fopen("GSdx_opengl_debug_hw.txt","w");
 	#endif
 
 	m_debug_gl_call =  theApp.GetConfigB("debug_opengl");
@@ -94,10 +100,6 @@ GSDeviceOGL::~GSDeviceOGL()
 		return;
 
 	GL_PUSH("GSDeviceOGL destructor");
-
-	if (GLLoader::in_replayer) {
-		GenerateProfilerData();
-	}
 
 	// Clean vertex buffer state
 	delete m_va;
@@ -142,14 +144,18 @@ GSDeviceOGL::~GSDeviceOGL()
 	// Must be done after the destruction of all shader/program objects
 	delete m_shader;
 	m_shader = NULL;
+
+	// Purge any pending message to reduce noise in Valgrind (potential memory leak
+	// in Mesa driver that doesn't free internal buffer when the context is destroyed)
+	CheckDebugLog();
 }
 
 void GSDeviceOGL::GenerateProfilerData()
 {
-	if (m_profiler.last_query < 3) return;
-
-	// Point to the last query
-	m_profiler.last_query--;
+	if (m_profiler.last_query < 3) {
+		glDeleteQueries(1 << 16, m_profiler.timer_query);
+		return;
+	}
 
 	// Wait latest quey to get valid result
 	GLuint available = 0;
@@ -162,8 +168,8 @@ void GSDeviceOGL::GenerateProfilerData()
 	std::vector<double> times;
 	double ms       = 0.000001;
 
-	float replay    = (float)(theApp.GetConfigI("linux_replay"));
-	int first_query = (float)m_profiler.last_query / replay;
+	int replay      = theApp.GetConfigI("linux_replay");
+	int first_query = replay > 1 ? m_profiler.last_query / replay : 0;
 
 	glGetQueryObjectui64v(m_profiler.timer_query[first_query], GL_QUERY_RESULT, &time_start);
 	for (uint32 q = first_query + 1; q < m_profiler.last_query; q++) {
@@ -173,6 +179,9 @@ void GSDeviceOGL::GenerateProfilerData()
 
 		time_start = time_end;
 	}
+
+	// Latest value is often silly, just drop it
+	times.pop_back();
 
 	glDeleteQueries(1 << 16, m_profiler.timer_query);
 
@@ -188,24 +197,43 @@ void GSDeviceOGL::GenerateProfilerData()
 	for (auto t : times) sd += pow(t-mean, 2);
 	sd = sqrt(sd / frames);
 
+	uint32 time_repartition[16] = {0};
+	for (auto t : times) {
+		uint32 slot = (uint32)(t/2.0);
+		if (slot >= countof(time_repartition)) {
+			slot = countof(time_repartition) - 1;
+		}
+		time_repartition[slot]++;
+	}
+
 	fprintf(stderr, "\nPerformance Profile for %.0f frames:\n", frames);
 	fprintf(stderr, "Min  %4.2f ms\t(%4.2f fps)\n", *minmax_time.first, 1000.0 / *minmax_time.first);
 	fprintf(stderr, "Mean %4.2f ms\t(%4.2f fps)\n", mean, 1000.0 / mean);
 	fprintf(stderr, "Max  %4.2f ms\t(%4.2f fps)\n", *minmax_time.second, 1000.0 / *minmax_time.second);
 	fprintf(stderr, "SD   %4.2f ms\n", sd);
 	fprintf(stderr, "\n");
+	fprintf(stderr, "Frame Repartition\n");
+	for (uint32 i = 0; i < countof(time_repartition); i ++) {
+		fprintf(stderr, "%3u ms => %3u ms\t%4u\n", 2 * i, 2 * (i+1), time_repartition[i]);
+	}
+
+	FILE* csv = fopen("GSdx_profile.csv", "w");
+	if (csv) {
+		for (size_t i = 0; i < times.size(); i++) {
+			fprintf(csv, "%zu,%lf\n", i, times[i]);
+		}
+
+		fclose(csv);
+	}
 }
 
 GSTexture* GSDeviceOGL::CreateSurface(int type, int w, int h, bool msaa, int fmt)
 {
 	GL_PUSH("Create surface");
 
+	bool trilinear = m_filter == Filtering::Trilinear || m_filter == Filtering::Trilinear_Bilinear_Forced || m_filter == Filtering::Trilinear_Always;
 	// A wrapper to call GSTextureOGL, with the different kind of parameter
-	GSTextureOGL* t = NULL;
-	t = new GSTextureOGL(type, w, h, fmt, m_fbo_read);
-	if (t == NULL) {
-		throw GSDXErrorOOM();
-	}
+	GSTextureOGL* t = new GSTextureOGL(type, w, h, fmt, m_fbo_read, m_mipmap > 1 || trilinear);
 
 	// NOTE: I'm not sure RenderTarget always need to be cleared. It could be costly for big upscale.
 	// FIXME: it will be more logical to do it in FetchSurface. This code is only called at first creation
@@ -217,7 +245,7 @@ GSTexture* GSDeviceOGL::CreateSurface(int type, int w, int h, bool msaa, int fmt
 				ClearRenderTarget(t, 0);
 				break;
 			case GSTexture::DepthStencil:
-				ClearDepth(t, 0);
+				ClearDepth(t);
 				// No need to clear the stencil now.
 				break;
 		}
@@ -239,7 +267,7 @@ GSTexture* GSDeviceOGL::FetchSurface(int type, int w, int h, bool msaa, int form
 				ClearRenderTarget(t, 0);
 				break;
 			case GSTexture::DepthStencil:
-				ClearDepth(t, 0);
+				ClearDepth(t);
 				// No need to clear the stencil now.
 				break;
 			case GSTexture::Texture:
@@ -318,7 +346,7 @@ bool GSDeviceOGL::Create(GSWnd* wnd)
 	{
 		GL_PUSH("GSDeviceOGL::Vertex Buffer");
 
-		ASSERT(sizeof(GSVertexPT1) == sizeof(GSVertex));
+		static_assert(sizeof(GSVertexPT1) == sizeof(GSVertex), "wrong GSVertex size");
 		GSInputLayoutOGL il_convert[] =
 		{
 			{2 , GL_FLOAT          , GL_FALSE , sizeof(GSVertexPT1) , (const GLvoid*)(0) }  ,
@@ -370,7 +398,7 @@ bool GSDeviceOGL::Create(GSWnd* wnd)
 		m_convert.pt = GetSamplerID(point);
 
 		PSSamplerSelector bilinear;
-		bilinear.ltf = true;
+		bilinear.biln = true;
 		m_convert.ln = GetSamplerID(bilinear);
 
 		m_convert.dss = new GSDepthStencilOGL();
@@ -487,6 +515,29 @@ bool GSDeviceOGL::Create(GSWnd* wnd)
 	}
 
 	// ****************************************************************
+	// Get Available Memory
+	// ****************************************************************
+	GLint vram[4] = {0};
+	if (GLLoader::fglrx_buggy_driver) {
+		// Full vram, remove a small margin for others buffer
+		glGetIntegerv(GL_TEXTURE_FREE_MEMORY_ATI, vram);
+	} else if (GLLoader::found_GL_NVX_gpu_memory_info) {
+		// GL_GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX <= give full memory
+		// Available vram
+		glGetIntegerv(GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX, vram);
+	} else {
+		fprintf(stdout, "No extenstion supported to get available memory. Use default value !\n");
+	}
+
+	// When VRAM is at least 2GB, we set the limit to the default i.e. 3.8 GB
+	// When VRAM is below 2GB, we add a factor 2 because RAM can be used. Potentially
+	// low VRAM gpu can go higher but perf will be bad anyway.
+	if (vram[0] > 0 && vram[0] < 1800000)
+		GLState::available_vram = (int64)(vram[0]) * 1024ul * 2ul;
+
+	fprintf(stdout, "Available VRAM/RAM:%lldMB for textures\n", GLState::available_vram >> 20u);
+
+	// ****************************************************************
 	// Finish window setup and backbuffer
 	// ****************************************************************
 	if(!GSDevice::Create(wnd))
@@ -496,11 +547,11 @@ bool GSDeviceOGL::Create(GSWnd* wnd)
 	Reset(rect.z, rect.w);
 
 	// Basic to ensure structures are correctly packed
-	ASSERT(sizeof(VSSelector) == 4);
-	ASSERT(sizeof(PSSelector) == 8);
-	ASSERT(sizeof(PSSamplerSelector) == 4);
-	ASSERT(sizeof(OMDepthStencilSelector) == 4);
-	ASSERT(sizeof(OMColorMaskSelector) == 4);
+	static_assert(sizeof(VSSelector) == 4, "Wrong VSSelector size");
+	static_assert(sizeof(PSSelector) == 8, "Wrong PSSelector size");
+	static_assert(sizeof(PSSamplerSelector) == 4, "Wrong PSSamplerSelector size");
+	static_assert(sizeof(OMDepthStencilSelector) == 4, "Wrong OMDepthStencilSelector size");
+	static_assert(sizeof(OMColorMaskSelector) == 4, "Wrong OMColorMaskSelector size");
 
 	return true;
 }
@@ -513,19 +564,15 @@ void GSDeviceOGL::CreateTextureFX()
 	m_ps_cb = new GSUniformBufferOGL("HW PS UBO", g_ps_cb_index, sizeof(PSConstantBuffer));
 
 	// warning 1 sampler by image unit. So you cannot reuse m_ps_ss...
-	m_palette_ss = CreateSampler(false, false, false);
+	m_palette_ss = CreateSampler(PSSamplerSelector(0));
 	glBindSampler(1, m_palette_ss);
 
 	// Pre compile the (remaining) Geometry & Vertex Shader
-	for (uint32 key = 0; key < countof(m_gs); key++) {
-		GSSelector sel(key);
-		if (!GLLoader::found_geometry_shader)
-			m_gs[key] = 0;
-		else if (sel.point == sel.sprite) // Invalid key
-			m_gs[key] = 0;
-		else
-			m_gs[key] = CompileGS(GSSelector(key));
-	}
+	// One-Hot encoding
+	memset(m_gs, 0, sizeof(m_gs));
+	m_gs[1] = CompileGS(GSSelector(1));
+	m_gs[2] = CompileGS(GSSelector(2));
+	m_gs[4] = CompileGS(GSSelector(4));
 
 	m_vs[0] = CompileVS(VSSelector(0));
 
@@ -549,7 +596,7 @@ bool GSDeviceOGL::Reset(int w, int h)
 	// Opengl allocate the backbuffer with the window. The render is done in the backbuffer when
 	// there isn't any FBO. Only a dummy texture is created to easily detect when the rendering is done
 	// in the backbuffer
-	m_backbuffer = new GSTextureOGL(GSTextureOGL::Backbuffer, w, h, 0, m_fbo_read);
+	m_backbuffer = new GSTextureOGL(GSTextureOGL::Backbuffer, w, h, 0, m_fbo_read, false);
 
 	return true;
 }
@@ -698,7 +745,7 @@ void GSDeviceOGL::ClearRenderTarget_i(GSTexture* t, int32 c)
 	}
 }
 
-void GSDeviceOGL::ClearDepth(GSTexture* t, float c)
+void GSDeviceOGL::ClearDepth(GSTexture* t)
 {
 	if (!t) return;
 
@@ -706,9 +753,15 @@ void GSDeviceOGL::ClearDepth(GSTexture* t, float c)
 
 	GL_PUSH("Clear Depth %d", T->GetID());
 
-	if (GLLoader::found_GL_ARB_clear_texture) {
+	if (0 && GLLoader::found_GL_ARB_clear_texture) {
+		// I don't know what the driver does but it creates
+		// some slowdowns on Harry Potter PS
+		// Maybe it triggers some texture relocations, or maybe
+		// it clears also the stencil value (2 times slower)
+		//
+		// Let's disable this code for the moment.
+
 		// Don't bother with Depth_Stencil insanity
-		ASSERT(c == 0.0f);
 		T->Clear(NULL);
 	} else {
 		OMSetFBO(m_fbo);
@@ -719,6 +772,7 @@ void GSDeviceOGL::ClearDepth(GSTexture* t, float c)
 
 		// TODO: check size of scissor before toggling it
 		glDisable(GL_SCISSOR_TEST);
+		float c = 0.0f;
 		if (GLState::depth_mask) {
 			glClearBufferfv(GL_DEPTH, 0, &c);
 		} else {
@@ -749,39 +803,59 @@ void GSDeviceOGL::ClearStencil(GSTexture* t, uint8 c)
 
 GLuint GSDeviceOGL::CreateSampler(PSSamplerSelector sel)
 {
-	return CreateSampler(sel.ltf, sel.tau, sel.tav, sel.aniso);
-}
-
-GLuint GSDeviceOGL::CreateSampler(bool bilinear, bool tau, bool tav, bool aniso)
-{
 	GL_PUSH("Create Sampler");
 
 	GLuint sampler;
 	glCreateSamplers(1, &sampler);
-	if (bilinear) {
-		glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+	// Bilinear filtering
+	if (sel.biln) {
 		glSamplerParameteri(sampler, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	} else {
-		glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glSamplerParameteri(sampler, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	}
 
-	if (tau)
+	switch (static_cast<GS_MIN_FILTER>(sel.triln)) {
+		case GS_MIN_FILTER::Nearest:
+			// Nop based on biln
+			break;
+		case GS_MIN_FILTER::Linear:
+			// Nop based on biln
+			break;
+		case GS_MIN_FILTER::Nearest_Mipmap_Nearest:
+			glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+			break;
+		case GS_MIN_FILTER::Nearest_Mipmap_Linear:
+			glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
+			break;
+		case GS_MIN_FILTER::Linear_Mipmap_Nearest:
+			glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
+			break;
+		case GS_MIN_FILTER::Linear_Mipmap_Linear:
+			glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+			break;
+		default:
+			break;
+	}
+
+	//glSamplerParameterf(sampler, GL_TEXTURE_MIN_LOD, 0);
+	//glSamplerParameterf(sampler, GL_TEXTURE_MAX_LOD, 6);
+
+	if (sel.tau)
 		glSamplerParameteri(sampler, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	else
 		glSamplerParameteri(sampler, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	if (tav)
+	if (sel.tav)
 		glSamplerParameteri(sampler, GL_TEXTURE_WRAP_T, GL_REPEAT);
 	else
 		glSamplerParameteri(sampler, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
 	glSamplerParameteri(sampler, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 
-	glSamplerParameterf(sampler, GL_TEXTURE_MIN_LOD, 0);
-	glSamplerParameterf(sampler, GL_TEXTURE_MAX_LOD, 6);
-
 	int anisotropy = theApp.GetConfigI("MaxAnisotropy");
-	if (GLLoader::found_GL_EXT_texture_filter_anisotropic && anisotropy && aniso)
+	if (GLLoader::found_GL_EXT_texture_filter_anisotropic && anisotropy && sel.aniso)
 		glSamplerParameterf(sampler, GL_TEXTURE_MAX_ANISOTROPY_EXT, (float)anisotropy);
 
 	return sampler;
@@ -847,7 +921,7 @@ void GSDeviceOGL::InitPrimDateTexture(GSTexture* rt, const GSVector4i& area)
 void GSDeviceOGL::RecycleDateTexture()
 {
 	if (m_date.t) {
-		//static_cast<GSTextureOGL*>(m_date.t)->Save(format("/tmp/date_adv_%04ld.csv", s_n));
+		//static_cast<GSTextureOGL*>(m_date.t)->Save(format("/tmp/date_adv_%04ld.csv", GSState::s_n));
 
 		Recycle(m_date.t);
 		m_date.t = NULL;
@@ -871,7 +945,8 @@ GLuint GSDeviceOGL::CompileVS(VSSelector sel)
 /* Note: must be here because tfx_glsl is static */
 GLuint GSDeviceOGL::CompileGS(GSSelector sel)
 {
-	std::string macro = format("#define GS_POINT %d\n", sel.point);
+	std::string macro = format("#define GS_POINT %d\n", sel.point)
+		+ format("#define GS_LINE %d\n", sel.line);
 
 	if (GLLoader::buggy_sso_dual_src)
 		return m_shader->CompileShader("tfx_vgs.glsl", "gs_main", GL_GEOMETRY_SHADER, tfx_vgs_glsl, macro);
@@ -891,6 +966,7 @@ GLuint GSDeviceOGL::CompilePS(PSSelector sel)
 		+ format("#define PS_CHANNEL_FETCH %d\n", sel.channel)
 		+ format("#define PS_URBAN_CHAOS_HLE %d\n", sel.urban_chaos_hle)
 		+ format("#define PS_TALES_OF_ABYSS_HLE %d\n", sel.tales_of_abyss_hle)
+		+ format("#define PS_TEX_IS_FB %d\n", sel.tex_is_fb)
 		+ format("#define PS_AEM %d\n", sel.aem)
 		+ format("#define PS_TFX %d\n", sel.tfx)
 		+ format("#define PS_TCC %d\n", sel.tcc)
@@ -899,6 +975,8 @@ GLuint GSDeviceOGL::CompilePS(PSSelector sel)
 		+ format("#define PS_CLR1 %d\n", sel.clr1)
 		+ format("#define PS_FBA %d\n", sel.fba)
 		+ format("#define PS_LTF %d\n", sel.ltf)
+		+ format("#define PS_AUTOMATIC_LOD %d\n", sel.automatic_lod)
+		+ format("#define PS_MANUAL_LOD %d\n", sel.manual_lod)
 		+ format("#define PS_COLCLIP %d\n", sel.colclip)
 		+ format("#define PS_DATE %d\n", sel.date)
 		+ format("#define PS_TCOFFSETHACK %d\n", sel.tcoffsethack)
@@ -938,7 +1016,7 @@ void GSDeviceOGL::SelfShaderTestRun(const string& dir, const string& file, const
 
 #ifdef __linux__
 	// Nouveau actually
-	if (GLLoader::mesa_amd_buggy_driver) {
+	if (GLLoader::mesa_buggy_driver) {
 		if (freopen(out.c_str(), "w", stderr) == NULL)
 			fprintf(stderr, "Failed to redirect stderr\n");
 	}
@@ -950,7 +1028,7 @@ void GSDeviceOGL::SelfShaderTestRun(const string& dir, const string& file, const
 
 #ifdef __linux__
 	// Nouveau actually
-	if (GLLoader::mesa_amd_buggy_driver) {
+	if (GLLoader::mesa_buggy_driver) {
 		if (freopen("/dev/tty", "w", stderr) == NULL)
 			fprintf(stderr, "Failed to restore stderr\n");
 	}
@@ -987,7 +1065,6 @@ void GSDeviceOGL::SelfShaderTest()
 		for (int fmt = 0; fmt < 3; fmt++) {
 			for (int i = 0; i < 3; i++) {
 				PSSelector sel;
-				sel.atst = 1;
 				sel.tfx = 4;
 
 				int ib = (i + 1) % 3;
@@ -1007,7 +1084,7 @@ void GSDeviceOGL::SelfShaderTest()
 	SelfShaderTestPrint(test, nb_shader);
 
 	test = "Alpha_Test";
-	for (int atst = 0; atst < 8; atst++) {
+	for (int atst = 0; atst < 5; atst++) {
 		PSSelector sel;
 		sel.tfx = 4;
 
@@ -1021,7 +1098,6 @@ void GSDeviceOGL::SelfShaderTest()
 	for (int read_ba = 0; read_ba < 2; read_ba++) {
 		PSSelector sel;
 		sel.tfx = 4;
-		sel.atst = 1;
 
 		sel.fog = 1;
 		sel.fbmask = 1;
@@ -1037,7 +1113,6 @@ void GSDeviceOGL::SelfShaderTest()
 	for (int date = 1; date < 7; date++) {
 		PSSelector sel;
 		sel.tfx = 4;
-		sel.atst = 1;
 
 		sel.date = date;
 		std::string file = format("Shader_Date_%d.glsl.asm", date);
@@ -1049,7 +1124,6 @@ void GSDeviceOGL::SelfShaderTest()
 	for (int fmt = 0; fmt < 3; fmt++) {
 		PSSelector sel;
 		sel.tfx = 4;
-		sel.atst = 1;
 
 		sel.fba = 1;
 		sel.dfmt = fmt;
@@ -1063,7 +1137,6 @@ void GSDeviceOGL::SelfShaderTest()
 	{
 		PSSelector sel;
 		sel.tfx = 1;
-		sel.atst = 1;
 
 		sel.fst = 0;
 		sel.iip = 1;
@@ -1079,7 +1152,6 @@ void GSDeviceOGL::SelfShaderTest()
 		for (int tfx = 0; tfx < 5; tfx++) {
 			for (int tcc = 0; tcc < 2; tcc++) {
 				PSSelector sel;
-				sel.atst = 1;
 				sel.fst = 1;
 
 				sel.channel = channel;
@@ -1102,7 +1174,6 @@ void GSDeviceOGL::SelfShaderTest()
 					for (int wms = 1; wms < 4; wms++) {
 						for (int wmt = 1; wmt < 4; wmt++) {
 							PSSelector sel;
-							sel.atst = 1;
 							sel.tfx  = 1;
 							sel.tcc  = 1;
 							sel.fst = 1;
@@ -1197,6 +1268,10 @@ void GSDeviceOGL::CopyRect(GSTexture* sTex, GSTexture* dTex, const GSVector4i& r
 	const GLuint& did = static_cast<GSTextureOGL*>(dTex)->GetID();
 
 	GL_PUSH("CopyRect from %d to %d", sid, did);
+
+#ifdef ENABLE_OGL_DEBUG
+	PSSetShaderResource(6, sTex);
+#endif
 
 	glCopyImageSubData( sid, GL_TEXTURE_2D,
 			0, r.x, r.y, 0,
@@ -1318,25 +1393,60 @@ void GSDeviceOGL::StretchRect(GSTexture* sTex, const GSVector4& sRect, GSTexture
 	EndScene();
 }
 
-void GSDeviceOGL::DoMerge(GSTexture* sTex[2], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect, bool slbg, bool mmod, const GSVector4& c)
+void GSDeviceOGL::DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect, const GSRegPMODE& PMODE, const GSRegEXTBUF& EXTBUF, const GSVector4& c)
 {
 	GL_PUSH("DoMerge");
 
-	OMSetColorMaskState();
+	GSVector4 full_r(0.0f, 0.0f, 1.0f, 1.0f);
+	bool feedback_write_2 = PMODE.EN2 && sTex[2] != nullptr && EXTBUF.FBIN == 1;
+	bool feedback_write_1 = PMODE.EN1 && sTex[2] != nullptr && EXTBUF.FBIN == 0;
+	bool feedback_write_2_but_blend_bg = feedback_write_2 && PMODE.SLBG == 1;
 
+	// Merge the 2 source textures (sTex[0],sTex[1]). Final results go to dTex. Feedback write will go to sTex[2].
+	// If either 2nd output is disabled or SLBG is 1, a background color will be used.
+	// Note: background color is also used when outside of the unit rectangle area
+	OMSetColorMaskState();
 	ClearRenderTarget(dTex, c);
 
-	if(sTex[1] && !slbg)
-	{
-		StretchRect(sTex[1], sRect[1], dTex, dRect[1], m_merge_obj.ps[0]);
+	// Upload constant to select YUV algo
+	if (feedback_write_2 || feedback_write_1) {
+		// Write result to feedback loop
+		m_misc_cb_cache.EMOD_AC.x = EXTBUF.EMODA;
+		m_misc_cb_cache.EMOD_AC.y = EXTBUF.EMODC;
+		m_convert.cb->cache_upload(&m_misc_cb_cache);
 	}
 
-	if(sTex[0])
-	{
-		m_merge_obj.cb->cache_upload(&c.v);
-
-		StretchRect(sTex[0], sRect[0], dTex, dRect[0], m_merge_obj.ps[mmod ? 1 : 0], m_MERGE_BLEND);
+	if (sTex[1] && (PMODE.SLBG == 0 || feedback_write_2_but_blend_bg)) {
+		// 2nd output is enabled and selected. Copy it to destination so we can blend it with 1st output
+		// Note: value outside of dRect must contains the background color (c)
+		StretchRect(sTex[1], sRect[1], dTex, dRect[1], ShaderConvert_COPY);
 	}
+
+	// Save 2nd output
+	if (feedback_write_2) // FIXME I'm not sure dRect[1] is always correct
+		StretchRect(dTex, full_r, sTex[2], dRect[1], ShaderConvert_YUV);
+
+	// Restore background color to process the normal merge
+	if (feedback_write_2_but_blend_bg)
+		ClearRenderTarget(dTex, c);
+
+	if (sTex[0]) {
+		if (PMODE.AMOD == 1) // Keep the alpha from the 2nd output
+			OMSetColorMaskState(OMColorMaskSelector(0x7));
+
+		// 1st output is enabled. It must be blended
+		if (PMODE.MMOD == 1) {
+			// Blend with a constant alpha
+			m_merge_obj.cb->cache_upload(&c.v);
+			StretchRect(sTex[0], sRect[0], dTex, dRect[0], m_merge_obj.ps[1], m_MERGE_BLEND);
+		} else {
+			// Blend with 2 * input alpha
+			StretchRect(sTex[0], sRect[0], dTex, dRect[0], m_merge_obj.ps[0], m_MERGE_BLEND);
+		}
+	}
+
+	if (feedback_write_1) // FIXME I'm not sure dRect[0] is always correct
+		StretchRect(dTex, full_r, sTex[2], dRect[0], ShaderConvert_YUV);
 }
 
 void GSDeviceOGL::DoInterlace(GSTexture* sTex, GSTexture* dTex, int shader, bool linear, float yoffset)
@@ -1593,7 +1703,7 @@ void GSDeviceOGL::OMSetColorMaskState(OMColorMaskSelector sel)
 	}
 }
 
-void GSDeviceOGL::OMSetBlendState(uint8 blend_index, uint8 blend_factor, bool is_blend_constant)
+void GSDeviceOGL::OMSetBlendState(uint8 blend_index, uint8 blend_factor, bool is_blend_constant, bool accumulation_blend)
 {
 	if (blend_index) {
 		if (!GLState::blend) {
@@ -1607,7 +1717,11 @@ void GSDeviceOGL::OMSetBlendState(uint8 blend_index, uint8 blend_factor, bool is
 			gl_BlendColor(bf, bf, bf, bf);
 		}
 
-		const OGLBlend& b = m_blendMapOGL[blend_index];
+		OGLBlend b = m_blendMapOGL[blend_index];
+		if (accumulation_blend) {
+			b.src = GL_ONE;
+			b.dst = GL_ONE;
+		}
 
 		if (GLState::eq_RGB != b.op) {
 			GLState::eq_RGB = b.op;
@@ -1658,7 +1772,7 @@ void GSDeviceOGL::OMSetRenderTargets(GSTexture* rt, GSTexture* ds, const GSVecto
 	{
 		GLState::viewport = size;
 		// FIXME ViewportIndexedf or ViewportIndexedfv (GL4.1)
-		glViewportIndexedf(0, 0, 0, size.x, size.y);
+		glViewportIndexedf(0, 0, 0, GLfloat(size.x), GLfloat(size.y));
 	}
 
 	GSVector4i r = scissor ? *scissor : GSVector4i(size).zwxy();
@@ -1821,7 +1935,13 @@ void GSDeviceOGL::DebugOutputToFile(GLenum gl_source, GLenum gl_type, GLuint id,
 		case GL_DEBUG_SEVERITY_HIGH_ARB   : severity = "High"; sev_counter++; break;
 		case GL_DEBUG_SEVERITY_MEDIUM_ARB : severity = "Mid"; break;
 		case GL_DEBUG_SEVERITY_LOW_ARB    : severity = "Low"; break;
-		default                           : severity = "Info"; break;
+		default                           : if (id == 0xFEAD)
+												severity = "Cache";
+											else if (id == 0xB0B0)
+												severity = "REG";
+											else if (id == 0xD0D0)
+												severity = "EXTRA";
+											break;
 	}
 	switch(gl_source) {
 		case GL_DEBUG_SOURCE_API_ARB             : source = "API"; break;
@@ -1836,11 +1956,11 @@ void GSDeviceOGL::DebugOutputToFile(GLenum gl_source, GLenum gl_type, GLuint id,
 #ifdef _DEBUG
 	// Don't spam noisy information on the terminal
 	if (gl_severity != GL_DEBUG_SEVERITY_NOTIFICATION) {
-		fprintf(stderr,"T:%s\tID:%d\tS:%s\t=> %s\n", type.c_str(), s_n, severity.c_str(), message.c_str());
+		fprintf(stderr,"T:%s\tID:%d\tS:%s\t=> %s\n", type.c_str(), GSState::s_n, severity.c_str(), message.c_str());
 	}
 #else
 	// Print nouveau shader compiler info
-	if (s_n == 0) {
+	if (GSState::s_n == 0) {
 		int t, local, gpr, inst, byte;
 		int status = sscanf(message.c_str(), "type: %d, local: %d, gpr: %d, inst: %d, bytes: %d",
 				&t, &local, &gpr, &inst, &byte);
@@ -1853,7 +1973,7 @@ void GSDeviceOGL::DebugOutputToFile(GLenum gl_source, GLenum gl_type, GLuint id,
 #endif
 
 	if (m_debug_gl_file)
-		fprintf(m_debug_gl_file,"T:%s\tID:%d\tS:%s\t=> %s\n", type.c_str(), s_n, severity.c_str(), message.c_str());
+		fprintf(m_debug_gl_file,"T:%s\tID:%d\tS:%s\t=> %s\n", type.c_str(), GSState::s_n, severity.c_str(), message.c_str());
 
 #ifdef _DEBUG
 	if (sev_counter >= 5) {
@@ -1926,13 +2046,13 @@ const GSDeviceOGL::OGLBlend GSDeviceOGL::m_blendMapOGL[3*3*3*3 + 1] =
 	{ 0                          , D3DBLENDOP_ADD         , D3DBLEND_BLENDFACTOR    , D3DBLEND_INVBLENDFACTOR} , // 0121: (Cs - Cd)*F  + Cd ==> Cs*F + Cd*(1 - F)
 	{ 0                          , D3DBLENDOP_SUBTRACT    , D3DBLEND_BLENDFACTOR    , D3DBLEND_BLENDFACTOR}    , // 0122: (Cs - Cd)*F  +  0 ==> Cs*F - Cd*F
 	{ BLEND_NO_BAR | BLEND_A_MAX , D3DBLENDOP_ADD         , D3DBLEND_ONE            , D3DBLEND_ZERO}           , //*0200: (Cs -  0)*As + Cs ==> Cs*(As + 1)
-	{ BLEND_ACCU                 , D3DBLENDOP_ADD         , D3DBLEND_ONE            , D3DBLEND_ONE}            , //?0201: (Cs -  0)*As + Cd ==> Cs*As + Cd
+	{ BLEND_ACCU                 , D3DBLENDOP_ADD         , D3DBLEND_SRCALPHA       , D3DBLEND_ONE}            , //?0201: (Cs -  0)*As + Cd ==> Cs*As + Cd
 	{ BLEND_NO_BAR               , D3DBLENDOP_ADD         , D3DBLEND_SRCALPHA       , D3DBLEND_ZERO}           , // 0202: (Cs -  0)*As +  0 ==> Cs*As
 	{ BLEND_A_MAX                , D3DBLENDOP_ADD         , D3DBLEND_ONE            , D3DBLEND_ZERO}           , //*0210: (Cs -  0)*Ad + Cs ==> Cs*(Ad + 1)
 	{ 0                          , D3DBLENDOP_ADD         , D3DBLEND_DESTALPHA      , D3DBLEND_ONE}            , // 0211: (Cs -  0)*Ad + Cd ==> Cs*Ad + Cd
 	{ 0                          , D3DBLENDOP_ADD         , D3DBLEND_DESTALPHA      , D3DBLEND_ZERO}           , // 0212: (Cs -  0)*Ad +  0 ==> Cs*Ad
 	{ BLEND_NO_BAR | BLEND_A_MAX , D3DBLENDOP_ADD         , D3DBLEND_ONE            , D3DBLEND_ZERO}           , //*0220: (Cs -  0)*F  + Cs ==> Cs*(F + 1)
-	{ BLEND_ACCU                 , D3DBLENDOP_ADD         , D3DBLEND_ONE            , D3DBLEND_ONE}            , //?0221: (Cs -  0)*F  + Cd ==> Cs*F + Cd
+	{ BLEND_ACCU                 , D3DBLENDOP_ADD         , D3DBLEND_BLENDFACTOR    , D3DBLEND_ONE}            , //?0221: (Cs -  0)*F  + Cd ==> Cs*F + Cd
 	{ BLEND_NO_BAR               , D3DBLENDOP_ADD         , D3DBLEND_BLENDFACTOR    , D3DBLEND_ZERO}           , // 0222: (Cs -  0)*F  +  0 ==> Cs*F
 	{ 0                          , D3DBLENDOP_ADD         , D3DBLEND_INVSRCALPHA    , D3DBLEND_SRCALPHA}       , // 1000: (Cd - Cs)*As + Cs ==> Cd*As + Cs*(1 - As)
 	{ BLEND_A_MAX                , D3DBLENDOP_REVSUBTRACT , D3DBLEND_SRCALPHA       , D3DBLEND_ONE}            , //*1001: (Cd - Cs)*As + Cd ==> Cd*(As + 1) - Cs*As
@@ -1962,13 +2082,13 @@ const GSDeviceOGL::OGLBlend GSDeviceOGL::m_blendMapOGL[3*3*3*3 + 1] =
 	{ BLEND_C_CLR                , D3DBLENDOP_ADD         , D3DBLEND_DESTCOLOR      , D3DBLEND_BLENDFACTOR}    , //#1221: (Cd -  0)*F  + Cd ==> Cd*(1 + F)
 	{ 0                          , D3DBLENDOP_ADD         , D3DBLEND_ZERO           , D3DBLEND_BLENDFACTOR}    , // 1222: (Cd -  0)*F  +  0 ==> Cd*F
 	{ BLEND_NO_BAR               , D3DBLENDOP_ADD         , D3DBLEND_INVSRCALPHA    , D3DBLEND_ZERO}           , // 2000: (0  - Cs)*As + Cs ==> Cs*(1 - As)
-	{ BLEND_ACCU                 , D3DBLENDOP_REVSUBTRACT , D3DBLEND_ONE            , D3DBLEND_ONE}            , // 2001: (0  - Cs)*As + Cd ==> Cd - Cs*As
+	{ BLEND_ACCU                 , D3DBLENDOP_REVSUBTRACT , D3DBLEND_SRCALPHA       , D3DBLEND_ONE}            , // 2001: (0  - Cs)*As + Cd ==> Cd - Cs*As
 	{ BLEND_NO_BAR               , D3DBLENDOP_REVSUBTRACT , D3DBLEND_SRCALPHA       , D3DBLEND_ZERO}           , // 2002: (0  - Cs)*As +  0 ==> 0 - Cs*As
 	{ 0                          , D3DBLENDOP_ADD         , D3DBLEND_INVDESTALPHA   , D3DBLEND_ZERO}           , // 2010: (0  - Cs)*Ad + Cs ==> Cs*(1 - Ad)
 	{ 0                          , D3DBLENDOP_REVSUBTRACT , D3DBLEND_DESTALPHA      , D3DBLEND_ONE}            , // 2011: (0  - Cs)*Ad + Cd ==> Cd - Cs*Ad
 	{ 0                          , D3DBLENDOP_REVSUBTRACT , D3DBLEND_DESTALPHA      , D3DBLEND_ZERO}           , // 2012: (0  - Cs)*Ad +  0 ==> 0 - Cs*Ad
 	{ BLEND_NO_BAR               , D3DBLENDOP_ADD         , D3DBLEND_INVBLENDFACTOR , D3DBLEND_ZERO}           , // 2020: (0  - Cs)*F  + Cs ==> Cs*(1 - F)
-	{ BLEND_ACCU                 , D3DBLENDOP_REVSUBTRACT , D3DBLEND_ONE            , D3DBLEND_ONE}            , // 2021: (0  - Cs)*F  + Cd ==> Cd - Cs*F
+	{ BLEND_ACCU                 , D3DBLENDOP_REVSUBTRACT , D3DBLEND_BLENDFACTOR    , D3DBLEND_ONE}            , // 2021: (0  - Cs)*F  + Cd ==> Cd - Cs*F
 	{ BLEND_NO_BAR               , D3DBLENDOP_REVSUBTRACT , D3DBLEND_BLENDFACTOR    , D3DBLEND_ZERO}           , // 2022: (0  - Cs)*F  +  0 ==> 0 - Cs*F
 	{ 0                          , D3DBLENDOP_SUBTRACT    , D3DBLEND_ONE            , D3DBLEND_SRCALPHA}       , // 2100: (0  - Cd)*As + Cs ==> Cs - Cd*As
 	{ 0                          , D3DBLENDOP_ADD         , D3DBLEND_ZERO           , D3DBLEND_INVSRCALPHA}    , // 2101: (0  - Cd)*As + Cd ==> Cd*(1 - As)

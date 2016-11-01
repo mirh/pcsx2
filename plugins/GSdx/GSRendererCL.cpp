@@ -74,6 +74,13 @@ typedef struct
 
 #pragma pack(pop)
 
+static GSVector4 GSRendererCL::m_pos_scale;
+
+void GSRendererCL::InitVectors()
+{
+	m_pos_scale = GSVector4(1.0f / 16, 1.0f / 16, 1.0f, 1.0f);
+}
+
 GSRendererCL::GSRendererCL()
 	: m_vb_count(0)
 	, m_synced(true)
@@ -192,15 +199,11 @@ GSTexture* GSRendererCL::GetOutput(int i, int& y_offset)
 			{
 				m_texture[i]->Save(format("c:\\temp1\\_%05d_f%lld_fr%d_%05x_%d.bmp", s_n, m_perfmon.GetFrame(), i, (int)DISPFB.Block(), (int)DISPFB.PSM));
 			}
-
-			s_n++;
 		}
 	}
 
 	return m_texture[i];
 }
-
-const GSVector4 g_pos_scale(1.0f / 16, 1.0f / 16, 1.0f, 1.0f);
 
 template<uint32 primclass, uint32 tme, uint32 fst>
 void GSRendererCL::ConvertVertexBuffer(GSVertexCL* RESTRICT dst, const GSVertex* RESTRICT src, size_t count)
@@ -214,7 +217,7 @@ void GSRendererCL::ConvertVertexBuffer(GSVertexCL* RESTRICT dst, const GSVertex*
 
 		GSVector4i xyzuvf(src->m[1]);
 
-		dst->p = (GSVector4(xyzuvf.upl16() - o) * g_pos_scale).xyxy(GSVector4::cast(xyzuvf.ywyw())); // pass zf as uints
+		dst->p = (GSVector4(xyzuvf.upl16() - o) * m_pos_scale).xyxy(GSVector4::cast(xyzuvf.ywyw())); // pass zf as uints
 
 		GSVector4 t = GSVector4::zero();
 
@@ -276,12 +279,10 @@ void GSRendererCL::Draw()
 
 		if(s_save && s_n >= s_saven && PRIM->TME)
 		{
-			s = format("c:\\temp1\\_%05d_f%lld_tex_%05x_%d.bmp", s_n, frame, (int)m_context->TEX0.TBP0, (int)m_context->TEX0.PSM);
+			s = format("c:\\temp1\\_%05d_f%lld_itex_%05x_%d.bmp", s_n, frame, (int)m_context->TEX0.TBP0, (int)m_context->TEX0.PSM);
 
 			m_mem.SaveBMP(s, m_context->TEX0.TBP0, m_context->TEX0.TBW, m_context->TEX0.PSM, 1 << m_context->TEX0.TW, 1 << m_context->TEX0.TH);
 		}
-
-		s_n++;
 
 		if(s_save && s_n >= s_saven)
 		{
@@ -296,8 +297,6 @@ void GSRendererCL::Draw()
 
 			m_mem.SaveBMP(s, m_context->ZBUF.Block(), m_context->FRAME.FBW, m_context->ZBUF.PSM, GetFrameRect().width(), 512);
 		}
-
-		s_n++;
 	}
 
 	try
@@ -553,8 +552,6 @@ void GSRendererCL::Draw()
 
 			m_mem.SaveBMP(s, m_context->ZBUF.Block(), m_context->FRAME.FBW, m_context->ZBUF.PSM, GetFrameRect().width(), 512);
 		}
-
-		s_n++;
 	}
 }
 

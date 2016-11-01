@@ -49,6 +49,11 @@ layout(std140, binding = 15) uniform cb15
 {
     ivec4 ScalingFactor;
     ivec4 ChannelShuffle;
+
+    int EMODA;
+    int EMODC;
+    int _pad0;
+    int _pad1;
 };
 #endif
 
@@ -72,7 +77,8 @@ layout(std140, binding = 21) uniform cb21
     vec4 WH;
 
     vec2 TA;
-    float _pad0;
+    //float _pad0;
+    int   Uber_ATST;
     float Af;
 
     uvec4 MskFix;
