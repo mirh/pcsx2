@@ -131,12 +131,10 @@ EXPORT_C_(int) GSinit()
 
 	GSBlock::InitVectors();
 	GSClut::InitVectors();
-	GSDrawScanlineCodeGenerator::InitVectors();
 #ifdef ENABLE_OPENCL
 	GSRendererCL::InitVectors();
 #endif
 	GSRendererSW::InitVectors();
-	GSSetupPrimCodeGenerator::InitVectors();
 	GSVector4i::InitVectors();
 	GSVector4::InitVectors();
 #if _M_SSE >= 0x500
@@ -146,6 +144,11 @@ EXPORT_C_(int) GSinit()
 	GSVector8i::InitVectors();
 #endif
 	GSVertexTrace::InitVectors();
+
+	if (g_const == nullptr)
+		return -1;
+	else
+		g_const->Init();
 
 #ifdef _WIN32
 
@@ -165,8 +168,7 @@ EXPORT_C GSshutdown()
 	gsopen_done = false;
 
 	delete s_gs;
-
-	s_gs = NULL;
+	s_gs = nullptr;
 
 	s_renderer = GSRendererType::Undefined;
 
@@ -499,6 +501,16 @@ static int _GSopen(void** dsp, const char* title, GSRendererType renderer, int t
 	return 0;
 }
 
+EXPORT_C_(void) GSosdLog(const char *utf8, uint32 color)
+{
+	if(s_gs && s_gs->m_dev) s_gs->m_dev->m_osd.Log(utf8, color);
+}
+
+EXPORT_C_(void) GSosdMonitor(const char *key, const char *value, uint32 color)
+{
+	if(s_gs && s_gs->m_dev) s_gs->m_dev->m_osd.Monitor(key, value, color);
+}
+
 EXPORT_C_(int) GSopen2(void** dsp, uint32 flags)
 {
 	static bool stored_toggle_state = false;
@@ -646,6 +658,10 @@ EXPORT_C GSinitReadFIFO(uint8* mem)
 	catch (GSDXRecoverableError)
 	{
 	}
+	catch (const std::bad_alloc&)
+	{
+		fprintf(stderr, "GSdx: Memory allocation error\n");
+	}
 }
 
 EXPORT_C GSreadFIFO(uint8* mem)
@@ -656,6 +672,10 @@ EXPORT_C GSreadFIFO(uint8* mem)
 	}
 	catch (GSDXRecoverableError)
 	{
+	}
+	catch (const std::bad_alloc&)
+	{
+		fprintf(stderr, "GSdx: Memory allocation error\n");
 	}
 }
 
@@ -669,6 +689,10 @@ EXPORT_C GSinitReadFIFO2(uint8* mem, uint32 size)
 	catch (GSDXRecoverableError)
 	{
 	}
+	catch (const std::bad_alloc&)
+	{
+		fprintf(stderr, "GSdx: Memory allocation error\n");
+	}
 }
 
 EXPORT_C GSreadFIFO2(uint8* mem, uint32 size)
@@ -679,6 +703,10 @@ EXPORT_C GSreadFIFO2(uint8* mem, uint32 size)
 	}
 	catch (GSDXRecoverableError)
 	{
+	}
+	catch (const std::bad_alloc&)
+	{
+		fprintf(stderr, "GSdx: Memory allocation error\n");
 	}
 }
 
@@ -751,6 +779,10 @@ EXPORT_C GSvsync(int field)
 	}
 	catch (GSDXRecoverableError)
 	{
+	}
+	catch (const std::bad_alloc&)
+	{
+		fprintf(stderr, "GSdx: Memory allocation error\n");
 	}
 }
 

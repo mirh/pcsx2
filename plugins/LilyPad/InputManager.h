@@ -1,5 +1,5 @@
 /*  LilyPad - Pad plugin for PS2 Emulator
- *  Copyright (C) 2002-2014  PCSX2 Dev Team/ChickenLiver
+ *  Copyright (C) 2002-2017  PCSX2 Dev Team/ChickenLiver
  *
  *  PCSX2 is free software: you can redistribute it and/or modify it under the
  *  terms of the GNU Lesser General Public License as published by the Free
@@ -31,6 +31,16 @@
 /* Idea is for this file and the associated cpp file to be Windows independent.
  * Still more effort than it's worth to port to Linux, however.
  */
+
+enum PadType {
+    DisabledPad,
+    Dualshock2Pad,
+    GuitarPad,
+    PopnPad,
+    MousePad,
+    neGconPad,
+    numPadTypes // total number of PadTypes. Add new PadType above this line.
+};
 
 // Mostly match DirectInput8 values.  Note that these are for physical controls.
 // One physical axis maps to 3 virtual ones, and one physical POV control maps to
@@ -71,7 +81,8 @@ struct Binding
     int command;
     int sensitivity;
     int deadZone;
-    unsigned char turbo;
+    int skipDeadZone;
+    unsigned char rapidFire;
 };
 
 #define UID_AXIS (1U << 31)
@@ -259,7 +270,7 @@ public:
         };
     };
 
-    PadBindings pads[2][4];
+    PadBindings pads[2][4][numPadTypes];
 
     // Virtual controls.  All basically act like pressure sensitivity buttons, with
     // values between 0 and 2^16.  2^16 is fully down, 0 is up.  Larger values

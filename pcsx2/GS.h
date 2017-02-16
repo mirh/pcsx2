@@ -19,6 +19,7 @@
 #include "System/SysThreads.h"
 #include "Gif.h"
 
+extern Fixed100 GetVerticalFrequency();
 extern __aligned16 u8 g_RealGSMem[Ps2MemSize::GSregs];
 
 enum CSR_FifoState
@@ -173,12 +174,12 @@ union tGS_IMR
     struct
     {
         u32 _reserved1	: 8;
-        u32 SIGMSK		: 1;
-        u32 FINISHMSK	: 1;
-        u32 HSMSK		: 1;
-        u32 VSMSK		: 1;
-        u32 EDWMSK		: 1;
-        u32 _undefined	: 2; // Should both be set to 1.
+        u32 SIGMSK		: 1; // Signal evevnt interrupt mask
+        u32 FINISHMSK	: 1; // Finish event interrupt mask
+        u32 HSMSK		: 1; // HSync interrupt mask
+        u32 VSMSK		: 1; // VSync interrupt mask
+        u32 EDWMSK		: 1; // Rectangle write termination interrupt mask
+        u32 _undefined	: 2; // undefined bits should be set to 1.
         u32 _reserved2	: 17;
     };
     u32 _u32;
@@ -199,6 +200,41 @@ union tGS_IMR
 };
 
 // --------------------------------------------------------------------------------------
+//  GSRegSMODE1
+// --------------------------------------------------------------------------------------
+// Currently it's only used to get the CMOD bit from the SMODE1 register value.
+union GSRegSMODE1
+{
+	struct
+	{
+		u32 RC : 3;
+		u32 LC : 7;
+		u32 T1248 : 2;
+		u32 SLCK : 1;
+		u32 CMOD : 2;
+		u32 EX : 1;
+		u32 PRST : 1;
+		u32 SINT : 1;
+		u32 XPCK : 1;
+		u32 PCK2 : 2;
+		u32 SPML : 4;
+		u32 GCONT : 1;
+		u32 PHS : 1;
+		u32 PVS : 1;
+		u32 PEHS : 1;
+		u32 PEVS : 1;
+		u32 CLKSEL : 2;
+		u32 NVCK : 1;
+		u32 SLCK2 : 1;
+		u32 VCKSEL : 2;
+		u32 VHP : 1;
+		u32 _PAD1 : 27;
+	};
+
+	u64 SMODE1;
+};
+
+// --------------------------------------------------------------------------------------
 //  GSRegSIGBLID
 // --------------------------------------------------------------------------------------
 struct GSRegSIGBLID
@@ -211,10 +247,9 @@ struct GSRegSIGBLID
 #define PS2GS_BASE(mem) (PS2MEM_GS+(mem&0x13ff))
 
 #define CSRreg		((tGS_CSR&)*(PS2MEM_GS+0x1000))
-#define GSIMRregs	((tGS_IMR&)*(PS2MEM_GS+0x1010))
 
 #define GSCSRr		((u32&)*(PS2MEM_GS+0x1000))
-#define GSIMR		((u32&)*(PS2MEM_GS+0x1010))
+#define GSIMR		((tGS_IMR&)*(PS2MEM_GS+0x1010))
 #define GSSIGLBLID	((GSRegSIGBLID&)*(PS2MEM_GS+0x1080))
 
 enum class GS_VideoMode : int

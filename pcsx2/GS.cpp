@@ -25,6 +25,7 @@
 using namespace Threading;
 using namespace R5900;
 
+static GS_VideoMode s_ColorBurst = GS_VideoMode::Uninitialized;
 __aligned16 u8 g_RealGSMem[Ps2MemSize::GSregs];
 
 void gsOnModeChanged( Fixed100 framerate, u32 newTickrate )
@@ -35,9 +36,12 @@ void gsOnModeChanged( Fixed100 framerate, u32 newTickrate )
 
 void gsSetVideoMode(GS_VideoMode mode )
 {
-	if( gsVideoMode == mode ) return;
+	if( gsVideoMode == mode )
+		return;
 
-	gsVideoMode = mode;
+	// SetGsCrt doesn't seem to work for PSX games and they're left with the initial bios mode
+	// At such cases, let's use the colorburst to detect the video mode.
+	gsVideoMode = (mode == GS_VideoMode::BIOS) ? s_ColorBurst : mode;
 	UpdateVSyncRate();
 }
 
@@ -51,7 +55,7 @@ void gsReset()
 	memzero(g_RealGSMem);
 
 	CSRreg.Reset();
-	GSIMR = 0x7f00;
+	GSIMR.reset();
 }
 
 static __fi void gsCSRwrite( const tGS_CSR& csr )
@@ -64,7 +68,7 @@ static __fi void gsCSRwrite( const tGS_CSR& csr )
 		GetMTGS().SendSimplePacket(GS_RINGTYPE_RESET, 0, 0, 0);
 
 		CSRreg.Reset();
-		GSIMR = 0x7F00;			//This is bits 14-8 thats all that should be 1
+		GSIMR.reset();
 	}
 
 	if(csr.FLUSH)
@@ -83,7 +87,7 @@ static __fi void gsCSRwrite( const tGS_CSR& csr )
 			GSSIGLBLID.SIGID = (GSSIGLBLID.SIGID & ~gifUnit.gsSIGNAL.data[1])
 				        | (gifUnit.gsSIGNAL.data[0]&gifUnit.gsSIGNAL.data[1]);
 
-			if (!(GSIMR&0x100)) gsIrq();
+			if (!GSIMR.SIGMSK) gsIrq();
 			CSRreg.SIGNAL  = true; // Just to be sure :p
 		}
 		else CSRreg.SIGNAL = false;
@@ -104,10 +108,10 @@ static __fi void IMRwrite(u32 value)
 {
 	GUNIT_LOG("IMRwrite()");
 
-	if (CSRreg.GetInterruptMask() & (~value & GSIMR) >> 8)
+	if (CSRreg.GetInterruptMask() & (~value & GSIMR._u32) >> 8)
 		gsIrq();
 
-	GSIMR = (value & 0x1f00)|0x6000;
+	GSIMR._u32 = (value & 0x1f00)|0x6000;
 }
 
 __fi void gsWrite8(u32 mem, u8 value)
@@ -136,6 +140,14 @@ __fi void gsWrite8(u32 mem, u8 value)
 		break;
 	}
 	GIF_LOG("GS write 8 at %8.8lx with data %8.8lx", mem, value);
+}
+
+static void GetColorBurst(u64 value)
+{
+	GSRegSMODE1 Register;
+	Register.SMODE1 = value;
+	if(Register.CMOD)
+		s_ColorBurst = (Register.CMOD == 3) ? GS_VideoMode::PAL : GS_VideoMode::NTSC;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -201,6 +213,8 @@ void __fastcall gsWrite64_generic( u32 mem, const mem64_t* value )
 
 void __fastcall gsWrite64_page_00( u32 mem, const mem64_t* value )
 {
+	if (mem == GS_SMODE1)
+		GetColorBurst(*value);
 	gsWrite64_generic( mem, value );
 }
 

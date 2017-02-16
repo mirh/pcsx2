@@ -25,7 +25,7 @@
   <PropertyGroup Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>
-    <CharacterSet>MultiByte</CharacterSet>
+    <CharacterSet>Unicode</CharacterSet>
     <WholeProgramOptimization Condition="$(Configuration.Contains(Release))">true</WholeProgramOptimization>
     <UseDebugLibraries Condition="$(Configuration.Contains(Debug))">true</UseDebugLibraries>
     <UseDebugLibraries Condition="!$(Configuration.Contains(Debug))">false</UseDebugLibraries>
@@ -53,6 +53,16 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\CDVD.cpp" />
+    <ClCompile Include="..\Settings.cpp" />
+    <ClCompile Include="..\Unix\GtkGui.cpp">
+      <ExcludedFromBuild>true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Unix\LinuxConfig.cpp">
+      <ExcludedFromBuild>true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Unix\LinuxIOCtlSrc.cpp">
+      <ExcludedFromBuild>true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="config.cpp" />
     <ClCompile Include="IOCtlSrc.cpp" />
     <ClCompile Include="..\ReadThread.cpp" />
@@ -60,6 +70,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\CDVD.h" />
+    <ClInclude Include="..\Settings.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>

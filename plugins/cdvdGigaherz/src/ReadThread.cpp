@@ -14,43 +14,49 @@
  */
 
 #include "CDVD.h"
+#include <atomic>
+#include <condition_variable>
+#include <limits>
+#include <queue>
+#include <thread>
 
-const s32 prefetch_max_blocks = 16;
-s32 prefetch_mode = 0;
-s32 prefetch_last_lba = 0;
-s32 prefetch_last_mode = 0;
-s32 prefetch_left = 0;
+const u32 sectors_per_read = 16;
 
-HANDLE hNotify = nullptr;
-HANDLE hThread = nullptr;
-HANDLE hRequestComplete = nullptr;
+static_assert(sectors_per_read > 1 && !(sectors_per_read & (sectors_per_read - 1)),
+              "sectors_per_read must by a power of 2");
 
-CRITICAL_SECTION CacheMutex;
-
-DWORD pidThread = 0;
-
-typedef struct
+struct SectorInfo
 {
-    int lsn;
-    int mode;
-    char data[2352 * 16]; //we will read in blocks of 16 sectors
-} SectorInfo;
+    u32 lsn;
+    s32 mode;
+    // Sectors are read in blocks, not individually
+    u8 data[2352 * sectors_per_read];
+};
+
+CacheRequest g_last_sector_block;
+
+static std::thread s_thread;
+
+static std::mutex s_notify_lock;
+static std::condition_variable s_notify_cv;
+static std::mutex s_request_lock;
+static std::queue<CacheRequest> s_request_queue;
+static std::mutex s_cache_lock;
+
+static std::atomic<bool> cdvd_is_open;
 
 //bits: 12 would use 1<<12 entries, or 4096*16 sectors ~ 128MB
 #define CACHE_SIZE 12
 
-const s32 CacheSize = (1 << CACHE_SIZE);
+const u32 CacheSize = 1U << CACHE_SIZE;
 SectorInfo Cache[CacheSize];
 
-bool threadRequestPending;
-SectorInfo threadRequestInfo;
-
-u32 cdvdSectorHash(int lsn, int mode)
+u32 cdvdSectorHash(u32 lsn, s32 mode)
 {
     u32 t = 0;
 
     int i = 32;
-    int m = CacheSize - 1;
+    u32 m = CacheSize - 1;
 
     while (i >= 0) {
         t ^= lsn & m;
@@ -61,41 +67,63 @@ u32 cdvdSectorHash(int lsn, int mode)
     return (t ^ mode) & m;
 }
 
-void cdvdCacheUpdate(int lsn, int mode, char *data)
+void cdvdCacheUpdate(u32 lsn, s32 mode, u8 *data)
 {
-    EnterCriticalSection(&CacheMutex);
+    std::lock_guard<std::mutex> guard(s_cache_lock);
     u32 entry = cdvdSectorHash(lsn, mode);
 
-    memcpy(Cache[entry].data, data, 2352 * 16);
+    memcpy(Cache[entry].data, data, 2352 * sectors_per_read);
     Cache[entry].lsn = lsn;
     Cache[entry].mode = mode;
-    LeaveCriticalSection(&CacheMutex);
 }
 
-bool cdvdCacheFetch(int lsn, int mode, char *data)
+bool cdvdCacheCheck(u32 lsn, s32 mode)
 {
-    EnterCriticalSection(&CacheMutex);
+    std::lock_guard<std::mutex> guard(s_cache_lock);
+    u32 entry = cdvdSectorHash(lsn, mode);
+
+    return Cache[entry].lsn == lsn && Cache[entry].mode == mode;
+}
+
+bool cdvdCacheFetch(u32 lsn, s32 mode, u8 *data)
+{
+    std::lock_guard<std::mutex> guard(s_cache_lock);
     u32 entry = cdvdSectorHash(lsn, mode);
 
     if ((Cache[entry].lsn == lsn) &&
         (Cache[entry].mode == mode)) {
-        memcpy(data, Cache[entry].data, 2352 * 16);
-        LeaveCriticalSection(&CacheMutex);
+        memcpy(data, Cache[entry].data, 2352 * sectors_per_read);
         return true;
     }
     //printf("NOT IN CACHE\n");
-    LeaveCriticalSection(&CacheMutex);
     return false;
 }
 
 void cdvdCacheReset()
 {
-    EnterCriticalSection(&CacheMutex);
-    for (int i = 0; i < CacheSize; i++) {
-        Cache[i].lsn = -1;
+    std::lock_guard<std::mutex> guard(s_cache_lock);
+    for (u32 i = 0; i < CacheSize; i++) {
+        Cache[i].lsn = std::numeric_limits<u32>::max();
         Cache[i].mode = -1;
     }
-    LeaveCriticalSection(&CacheMutex);
+}
+
+bool cdvdReadBlockOfSectors(u32 sector, s32 mode, u8 *data)
+{
+    u32 count = std::min(sectors_per_read, src->GetSectorCount() - sector);
+
+    // TODO: Is it really necessary to retry if it fails? I'm not sure the
+    // second time is really going to be any better.
+    for (int tries = 0; tries < 2; ++tries) {
+        if (mode == CDVD_MODE_2048) {
+            if (src->ReadSectors2048(sector, count, data))
+                return true;
+        } else {
+            if (src->ReadSectors2352(sector, count, data))
+                return true;
+        }
+    }
+    return false;
 }
 
 void cdvdCallNewDiscCB()
@@ -107,22 +135,9 @@ void cdvdCallNewDiscCB()
 
 bool cdvdUpdateDiscStatus()
 {
-    int change = src->DiscChanged();
+    bool ready = src->DiscReady();
 
-    if (change == -1) { //error getting status (no disc in drive?)
-        //try to recreate the device
-        src->Reopen();
-
-        if (src->IsOK()) {
-            change = 1;
-        } else {
-            curDiskType = CDVD_TYPE_NODISC;
-            curTrayStatus = CDVD_TRAY_OPEN;
-            return true;
-        }
-    }
-
-    if (change == 1) {
+    if (!ready) {
         if (!disc_has_changed) {
             disc_has_changed = true;
             curDiskType = CDVD_TYPE_NODISC;
@@ -134,179 +149,156 @@ bool cdvdUpdateDiscStatus()
             curDiskType = CDVD_TYPE_NODISC;
             curTrayStatus = CDVD_TRAY_CLOSE;
 
-            // just a test
-            src->Reopen();
-
             disc_has_changed = false;
             cdvdRefreshData();
+
+            {
+                std::lock_guard<std::mutex> request_guard(s_request_lock);
+                s_request_queue = std::queue<CacheRequest>();
+            }
+
             cdvdCallNewDiscCB();
         }
     }
-    return (change != 0);
+    return !ready;
 }
 
-DWORD CALLBACK cdvdThread(PVOID param)
+void cdvdThread()
 {
+    u8 buffer[2352 * sectors_per_read];
+    u32 prefetches_left = 0;
+
     printf(" * CDVD: IO thread started...\n");
+    std::unique_lock<std::mutex> guard(s_notify_lock);
 
     while (cdvd_is_open) {
-        if (!src)
-            break;
-
         if (cdvdUpdateDiscStatus()) {
             // Need to sleep some to avoid an aggressive spin that sucks the cpu dry.
-            Sleep(10);
+            s_notify_cv.wait_for(guard, std::chrono::milliseconds(10));
+            prefetches_left = 0;
             continue;
         }
 
-        if (prefetch_left)
-            WaitForSingleObject(hNotify, 1);
-        else
-            WaitForSingleObject(hNotify, 250);
+        if (prefetches_left == 0)
+            s_notify_cv.wait_for(guard, std::chrono::milliseconds(250));
 
         // check again to make sure we're not done here...
         if (!cdvd_is_open)
             break;
 
-        static SectorInfo info;
+        // Read request
+        bool handling_request = false;
+        CacheRequest request;
 
-        bool handlingRequest = false;
-
-        if (threadRequestPending) {
-            info = threadRequestInfo;
-            handlingRequest = true;
-        } else {
-            info.lsn = prefetch_last_lba;
-            info.mode = prefetch_last_mode;
+        {
+            std::lock_guard<std::mutex> request_guard(s_request_lock);
+            if (!s_request_queue.empty()) {
+                request = s_request_queue.front();
+                s_request_queue.pop();
+                handling_request = true;
+            }
         }
 
-        if (threadRequestPending || prefetch_left) {
-            s32 ret = -1;
-            s32 tries = 5;
+        if (!handling_request) {
+            if (prefetches_left == 0)
+                continue;
 
-            s32 count = 16;
+            --prefetches_left;
 
-            s32 left = tracks[0].length - info.lsn;
+            u32 next_prefetch_lsn = g_last_sector_block.lsn + sectors_per_read;
+            request = {next_prefetch_lsn, g_last_sector_block.mode};
+        }
 
-            if (left < count)
-                count = left;
-
-            do {
-                if (info.mode == CDVD_MODE_2048)
-                    ret = src->ReadSectors2048(info.lsn, count, info.data);
-                else
-                    ret = src->ReadSectors2352(info.lsn, count, info.data);
-
-                if (ret == 0)
-                    break;
-
-                tries--;
-
-            } while ((ret < 0) && (tries > 0));
-
-            cdvdCacheUpdate(info.lsn, info.mode, info.data);
-
-            if (handlingRequest) {
-                threadRequestInfo = info;
-
-                handlingRequest = false;
-                threadRequestPending = false;
-                PulseEvent(hRequestComplete);
-
-                prefetch_last_lba = info.lsn;
-                prefetch_last_mode = info.mode;
-
-                prefetch_left = prefetch_max_blocks;
+        // Handle request
+        if (!cdvdCacheCheck(request.lsn, request.mode)) {
+            if (cdvdReadBlockOfSectors(request.lsn, request.mode, buffer)) {
+                cdvdCacheUpdate(request.lsn, request.mode, buffer);
             } else {
-                prefetch_last_lba += 16;
-                prefetch_left--;
+                // If the read fails, further reads are likely to fail too.
+                prefetches_left = 0;
+                continue;
             }
+        }
+
+        g_last_sector_block = request;
+
+        if (!handling_request)
+            continue;
+
+        // Prefetch
+        u32 next_prefetch_lsn = g_last_sector_block.lsn + sectors_per_read;
+        if (next_prefetch_lsn >= src->GetSectorCount()) {
+            prefetches_left = 0;
+        } else {
+            const u32 max_prefetches = 16;
+            u32 remaining = src->GetSectorCount() - next_prefetch_lsn;
+            prefetches_left = std::min((remaining + sectors_per_read - 1) / sectors_per_read, max_prefetches);
         }
     }
     printf(" * CDVD: IO thread finished.\n");
-    return 0;
 }
 
-s32 cdvdStartThread()
+bool cdvdStartThread()
 {
-    InitializeCriticalSection(&CacheMutex);
-
-    hNotify = CreateEvent(NULL, FALSE, FALSE, NULL);
-    if (hNotify == nullptr)
-        return -1;
-
-    hRequestComplete = CreateEvent(NULL, FALSE, FALSE, NULL);
-    if (hRequestComplete == nullptr)
-        return -1;
-
     cdvd_is_open = true;
-    hThread = CreateThread(NULL, 0, cdvdThread, NULL, 0, &pidThread);
-
-    if (hThread == nullptr)
-        return -1;
-
-    SetThreadPriority(hThread, THREAD_PRIORITY_NORMAL);
+    try {
+        s_thread = std::thread(cdvdThread);
+    } catch (std::system_error &) {
+        cdvd_is_open = false;
+        return false;
+    }
 
     cdvdCacheReset();
 
-    return 0;
+    return true;
 }
 
 void cdvdStopThread()
 {
     cdvd_is_open = false;
-    PulseEvent(hNotify);
-    if (WaitForSingleObject(hThread, 4000) == WAIT_TIMEOUT) {
-        TerminateThread(hThread, 0);
-    }
-    CloseHandle(hThread);
-    CloseHandle(hNotify);
-    CloseHandle(hRequestComplete);
-
-    DeleteCriticalSection(&CacheMutex);
+    s_notify_cv.notify_one();
+    s_thread.join();
 }
 
 s32 cdvdRequestSector(u32 sector, s32 mode)
 {
-    if (sector >= tracks[0].length)
+    if (sector >= src->GetSectorCount())
         return -1;
 
-    sector &= ~15; //align to 16-sector block
+    // Align to cache block
+    sector &= ~(sectors_per_read - 1);
 
-    threadRequestInfo.lsn = sector;
-    threadRequestInfo.mode = mode;
-    threadRequestPending = false;
-    if (cdvdCacheFetch(sector, mode, threadRequestInfo.data)) {
+    if (cdvdCacheCheck(sector, mode))
         return 0;
+
+    {
+        std::lock_guard<std::mutex> guard(s_request_lock);
+        s_request_queue.push({sector, mode});
     }
 
-    threadRequestPending = true;
-    ResetEvent(hRequestComplete);
-    PulseEvent(hNotify);
+    s_notify_cv.notify_one();
 
     return 0;
 }
 
-s32 cdvdRequestComplete()
+u8 *cdvdGetSector(u32 sector, s32 mode)
 {
-    return !threadRequestPending;
-}
+    static u8 buffer[2352 * sectors_per_read];
 
-s8 *cdvdGetSector(s32 sector, s32 mode)
-{
-    while (threadRequestPending) {
-        WaitForSingleObject(hRequestComplete, 10);
-    }
+    // Align to cache block
+    u32 sector_block = sector & ~(sectors_per_read - 1);
 
-    s32 offset;
+    if (!cdvdCacheFetch(sector_block, mode, buffer))
+        if (cdvdReadBlockOfSectors(sector_block, mode, buffer))
+            cdvdCacheUpdate(sector_block, mode, buffer);
 
     if (mode == CDVD_MODE_2048) {
-        offset = 2048 * (sector - threadRequestInfo.lsn);
-        return threadRequestInfo.data + offset;
+        u32 offset = 2048 * (sector - sector_block);
+        return buffer + offset;
     }
 
-    offset = 2352 * (sector - threadRequestInfo.lsn);
-    s8 *data = threadRequestInfo.data + offset;
+    u32 offset = 2352 * (sector - sector_block);
+    u8 *data = buffer + offset;
 
     switch (mode) {
         case CDVD_MODE_2328:
@@ -317,54 +309,29 @@ s8 *cdvdGetSector(s32 sector, s32 mode)
     return data;
 }
 
-s32 cdvdDirectReadSector(s32 first, s32 mode, char *buffer)
+s32 cdvdDirectReadSector(u32 sector, s32 mode, u8 *buffer)
 {
-    static char data[16 * 2352];
+    static u8 data[2352 * sectors_per_read];
 
-    if ((u32)first >= tracks[0].length)
+    if (sector >= src->GetSectorCount())
         return -1;
 
-    s32 sector = first & (~15); //align to 16-sector block
+    // Align to cache block
+    u32 sector_block = sector & ~(sectors_per_read - 1);
 
-    EnterCriticalSection(&CacheMutex);
-    if (!cdvdCacheFetch(sector, mode, data)) {
-        s32 ret = -1;
-        s32 tries = 5;
-
-        s32 count = 16;
-
-        s32 left = tracks[0].length - sector;
-
-        if (left < count)
-            count = left;
-
-        do {
-            if (mode == CDVD_MODE_2048)
-                ret = src->ReadSectors2048(sector, count, data);
-            else
-                ret = src->ReadSectors2352(sector, count, data);
-
-            if (ret == 0)
-                break;
-
-            tries--;
-
-        } while ((ret < 0) && (tries > 0));
-
-        cdvdCacheUpdate(sector, mode, data);
+    if (!cdvdCacheFetch(sector_block, mode, data)) {
+        if (cdvdReadBlockOfSectors(sector_block, mode, data))
+            cdvdCacheUpdate(sector_block, mode, data);
     }
-    LeaveCriticalSection(&CacheMutex);
-
-    s32 offset;
 
     if (mode == CDVD_MODE_2048) {
-        offset = 2048 * (first - sector);
+        u32 offset = 2048 * (sector - sector_block);
         memcpy(buffer, data + offset, 2048);
         return 0;
     }
 
-    offset = 2352 * (first - sector);
-    s8 *bfr = data + offset;
+    u32 offset = 2352 * (sector - sector_block);
+    u8 *bfr = data + offset;
 
     switch (mode) {
         case CDVD_MODE_2328:
@@ -374,7 +341,7 @@ s32 cdvdDirectReadSector(s32 first, s32 mode, char *buffer)
             memcpy(buffer, bfr + 12, 2340);
             return 0;
         default:
-            memcpy(buffer, bfr + 12, 2352);
+            memcpy(buffer, bfr, 2352);
             return 0;
     }
 }
@@ -386,7 +353,7 @@ s32 cdvdGetMediaType()
 
 s32 cdvdRefreshData()
 {
-    char *diskTypeName = "Unknown";
+    const char *diskTypeName = "Unknown";
 
     //read TOC from device
     cdvdParseTOC();

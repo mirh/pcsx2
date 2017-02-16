@@ -33,18 +33,17 @@ GSRendererHW::GSRendererHW(GSTextureCache* tc)
 	, m_channel_shuffle(false)
 	, m_lod(GSVector2i(0,0))
 {
+	m_mipmap = theApp.GetConfigI("mipmap_hw");
 	m_upscale_multiplier = theApp.GetConfigI("upscale_multiplier");
 	m_large_framebuffer  = theApp.GetConfigB("large_framebuffer");
 	if (theApp.GetConfigB("UserHacks")) {
 		m_userhacks_align_sprite_X       = theApp.GetConfigB("UserHacks_align_sprite_X");
 		m_userhacks_round_sprite_offset  = theApp.GetConfigI("UserHacks_round_sprite_offset");
 		m_userhacks_disable_gs_mem_clear = theApp.GetConfigB("UserHacks_DisableGsMemClear");
-		m_mipmap                         = theApp.GetConfigI("UserHacks_mipmap");
 	} else {
 		m_userhacks_align_sprite_X       = false;
 		m_userhacks_round_sprite_offset  = 0;
 		m_userhacks_disable_gs_mem_clear = false;
-		m_mipmap                         = 0;
 	}
 
 	if (!m_upscale_multiplier) { //Custom Resolution
@@ -220,18 +219,12 @@ GSTexture* GSRendererHW::GetOutput(int i, int& y_offset)
 
 	GSTexture* t = NULL;
 
-	if(GSTextureCache::Target* rt = m_tc->LookupTarget(TEX0, m_width, m_height, GetFrameRect(i).bottom))
+	if(GSTextureCache::Target* rt = m_tc->LookupTarget(TEX0, m_width, m_height, GetFramebufferHeight()))
 	{
 		t = rt->m_texture;
 
 		int delta = TEX0.TBP0 - rt->m_TEX0.TBP0;
-		if (delta > 0) {
-			// Code was corrected to use generic format. But I'm not sure behavior is correct.
-			// Let's keep the warning to easily spot game that trigger this code path.
-#ifndef DISABLE_WIP_ASSERTION
-			ASSERT(DISPFB.PSM == PSM_PSMCT32 || DISPFB.PSM == PSM_PSMCT24);
-#endif
-
+		if (delta > 0 && DISPFB.FBW != 0) {
 			int pages = delta >> 5u;
 			int y_pages = pages / DISPFB.FBW;
 			y_offset = y_pages * GSLocalMemory::m_psm[DISPFB.PSM].pgs.y;
@@ -869,11 +862,11 @@ GSRendererHW::Hacks::Hacks()
 	m_oi_list.push_back(HackEntry<OI_Ptr>(CRC::SpyroNewBeginning, CRC::RegionCount, &GSRendererHW::OI_SpyroNewBeginning));
 	m_oi_list.push_back(HackEntry<OI_Ptr>(CRC::SpyroEternalNight, CRC::RegionCount, &GSRendererHW::OI_SpyroEternalNight));
 	m_oi_list.push_back(HackEntry<OI_Ptr>(CRC::SuperManReturns, CRC::RegionCount, &GSRendererHW::OI_SuperManReturns));
+	m_oi_list.push_back(HackEntry<OI_Ptr>(CRC::TalesOfLegendia, CRC::RegionCount, &GSRendererHW::OI_TalesOfLegendia));
 	m_oi_list.push_back(HackEntry<OI_Ptr>(CRC::ArTonelico2, CRC::RegionCount, &GSRendererHW::OI_ArTonelico2));
 	m_oi_list.push_back(HackEntry<OI_Ptr>(CRC::ItadakiStreet, CRC::RegionCount, &GSRendererHW::OI_ItadakiStreet));
 
 	if (!can_handle_depth) {
-		m_oi_list.push_back(HackEntry<OI_Ptr>(CRC::TalesOfLegendia, CRC::RegionCount, &GSRendererHW::OI_TalesOfLegendia));
 		m_oi_list.push_back(HackEntry<OI_Ptr>(CRC::SMTNocturne, CRC::RegionCount, &GSRendererHW::OI_SMTNocturne));
 		m_oi_list.push_back(HackEntry<OI_Ptr>(CRC::GodOfWar2, CRC::RegionCount, &GSRendererHW::OI_GodOfWar2));
 	}
@@ -926,8 +919,8 @@ void GSRendererHW::OI_DoubleHalfClear(GSTexture* rt, GSTexture* ds)
 		//	return;
 
 		// Size of the current draw
-		uint32 w_pages = roundf(m_vt.m_max.p.x / frame_psm.pgs.x);
-		uint32 h_pages = roundf(m_vt.m_max.p.y / frame_psm.pgs.y);
+		uint32 w_pages = static_cast<uint32>(roundf(m_vt.m_max.p.x / frame_psm.pgs.x));
+		uint32 h_pages = static_cast<uint32>(roundf(m_vt.m_max.p.y / frame_psm.pgs.y));
 		uint32 written_pages = w_pages * h_pages;
 
 		// Frame and depth pointer can be inverted
@@ -1023,7 +1016,7 @@ void GSRendererHW::OI_GsMemClear()
 
 bool GSRendererHW::OI_BlitFMV(GSTextureCache::Target* _rt, GSTextureCache::Source* tex, const GSVector4i& r_draw)
 {
-	if (r_draw.w > 1024 && (m_vt.m_primclass == GS_SPRITE_CLASS) && (m_vertex.next == 2) && PRIM->TME && !PRIM->ABE && tex && !tex->m_target) {
+	if (r_draw.w > 1024 && (m_vt.m_primclass == GS_SPRITE_CLASS) && (m_vertex.next == 2) && PRIM->TME && !PRIM->ABE && tex && !tex->m_target && m_context->TEX0.TBW > 0) {
 		GL_PUSH("OI_BlitFMV");
 
 		GL_INS("OI_BlitFMV");
@@ -1156,7 +1149,7 @@ bool GSRendererHW::OI_FFXII(GSTexture* rt, GSTexture* ds, GSTextureCache::Source
 				m_vertex.head = m_vertex.tail = m_vertex.next = 4;
 				m_index.tail = 6;
 
-				m_vt.Update(m_vertex.buff, m_index.buff, m_index.tail, GS_TRIANGLE_CLASS);
+				m_vt.Update(m_vertex.buff, m_index.buff, m_vertex.tail, m_index.tail, GS_TRIANGLE_CLASS);
 			}
 			else
 			{
@@ -1204,7 +1197,7 @@ bool GSRendererHW::OI_MetalSlug6(GSTexture* rt, GSTexture* ds, GSTextureCache::S
 		}
 	}
 
-	m_vt.Update(m_vertex.buff, m_index.buff, m_index.tail, m_vt.m_primclass);
+	m_vt.Update(m_vertex.buff, m_index.buff, m_vertex.tail, m_index.tail, m_vt.m_primclass);
 
 	return true;
 }

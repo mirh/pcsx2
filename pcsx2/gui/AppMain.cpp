@@ -278,7 +278,6 @@ extern int TranslateGDKtoWXK( u32 keysym );
 void Pcsx2App::PadKeyDispatch( const keyEvent& ev )
 {
 	m_kevt.SetEventType( ( ev.evt == KEYPRESS ) ? wxEVT_KEY_DOWN : wxEVT_KEY_UP );
-	const bool isDown = (ev.evt == KEYPRESS);
 
 //returns 0 for normal keys and a WXK_* value for special keys
 #ifdef __WXMSW__
@@ -291,14 +290,12 @@ void Pcsx2App::PadKeyDispatch( const keyEvent& ev )
 #	error Unsupported Target Platform.
 #endif
 
-	switch (vkey)
-	{
-		case WXK_SHIFT:		m_kevt.m_shiftDown		= isDown; return;
-		case WXK_CONTROL:	m_kevt.m_controlDown	= isDown; return;
-
-		case WXK_ALT:		// ALT/MENU are usually the same key?  I'm confused.
-		case WXK_MENU:		m_kevt.m_altDown		= isDown; return;
-	}
+	// Don't rely on current event handling to get the state of those specials keys.
+	// Typical linux bug: hit ctrl-alt key to switch the desktop. Key will be released
+	// outside of the window so the app isn't aware of the current key state.
+	m_kevt.m_shiftDown = wxGetKeyState(WXK_SHIFT);
+	m_kevt.m_controlDown = wxGetKeyState(WXK_CONTROL);
+	m_kevt.m_altDown = wxGetKeyState(WXK_MENU) || wxGetKeyState(WXK_ALT);
 
 	m_kevt.m_keyCode = vkey? vkey : ev.key;
 
@@ -1067,7 +1064,7 @@ public:
 	SysExecEvent_Execute()
 		: m_UseCDVDsrc(false)
 		, m_UseELFOverride(false)
-		, m_cdvdsrc_type(CDVDsrc_Iso)
+		, m_cdvdsrc_type(CDVD_SourceType::Iso)
 	{
 	}
 
@@ -1093,11 +1090,11 @@ protected:
 		CoreThread.ResetQuick();
 		symbolMap.Clear();
 
-		CDVDsys_SetFile( CDVDsrc_Iso, g_Conf->CurrentIso );
+		CDVDsys_SetFile(CDVD_SourceType::Iso, g_Conf->CurrentIso );
 		if( m_UseCDVDsrc )
 			CDVDsys_ChangeSource( m_cdvdsrc_type );
 		else if( CDVD == NULL )
-			CDVDsys_ChangeSource( CDVDsrc_NoDisc );
+			CDVDsys_ChangeSource(CDVD_SourceType::NoDisc);
 
 		if( m_UseELFOverride && !CoreThread.HasActiveMachine() )
 			CoreThread.SetElfOverride( m_elf_override );

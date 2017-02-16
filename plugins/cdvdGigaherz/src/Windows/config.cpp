@@ -1,4 +1,4 @@
-//GiGaHeRz SPU2 Driver
+//Copyright (C) 2016 PCSX2 Dev Team
 //Copyright (c) David Quintana <DavidQuintana@canal21.com>
 //
 //This library is free software; you can redistribute it and/or
@@ -19,180 +19,52 @@
 #include "../CDVD.h"
 #include <Windows.h>
 #include <commctrl.h>
+#include <codecvt>
 #include "resource.h"
 
-// Config Vars
+static HINSTANCE s_hinstance;
 
-// DEBUG
-
-char source_drive;
-
-char CfgFile[MAX_PATH + 10] = "inis/cdvdGigaherz.ini";
-
-void CfgSetSettingsDir(const char *dir)
+BOOL WINAPI DllMain(HINSTANCE hinstance, DWORD reason, LPVOID reserved)
 {
-    // a better std::string version, but it's inconvenient for other reasons.
-    //CfgFile = std::string(( dir == NULL ) ? "inis/" : dir) + "cdvdGigaherz.ini";
+    if (reason == DLL_PROCESS_ATTACH)
+        s_hinstance = hinstance;
 
-    strcpy_s(CfgFile, (dir == NULL) ? "inis" : dir);
-    strcat_s(CfgFile, "/cdvdGigaherz.ini");
+    return TRUE;
 }
-
-
-/*| Config File Format: |¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯*\
-+--+---------------------+------------------------+
-|												  |
-| Option=Value									  |
-|												  |
-|												  |
-| Boolean Values: TRUE,YES,1,T,Y mean 'true',	  |
-|                 everything else means 'false'.  |
-|												  |
-| All Values are limited to 255 chars.			  |
-|												  |
-+-------------------------------------------------+
- \*_____________________________________________*/
-
-
-void CfgWriteBool(char *Section, char *Name, char Value)
-{
-    char *Data = Value ? "TRUE" : "FALSE";
-
-    WritePrivateProfileString(Section, Name, Data, CfgFile);
-}
-
-void CfgWriteInt(char *Section, char *Name, int Value)
-{
-    char Data[255];
-    _itoa(Value, Data, 10);
-
-    WritePrivateProfileString(Section, Name, Data, CfgFile);
-}
-
-void CfgWriteStr(char *Section, char *Name, char *Data)
-{
-    WritePrivateProfileString(Section, Name, Data, CfgFile);
-}
-
-/*****************************************************************************/
-
-char CfgReadBool(char *Section, char *Name, char Default)
-{
-    char Data[255] = "";
-    GetPrivateProfileString(Section, Name, "", Data, 255, CfgFile);
-    Data[254] = 0;
-    if (strlen(Data) == 0) {
-        CfgWriteBool(Section, Name, Default);
-        return Default;
-    }
-
-    if (strcmp(Data, "1") == 0)
-        return -1;
-    if (strcmp(Data, "Y") == 0)
-        return -1;
-    if (strcmp(Data, "T") == 0)
-        return -1;
-    if (strcmp(Data, "YES") == 0)
-        return -1;
-    if (strcmp(Data, "TRUE") == 0)
-        return -1;
-    return 0;
-}
-
-int CfgReadInt(char *Section, char *Name, int Default)
-{
-    char Data[255] = "";
-    GetPrivateProfileString(Section, Name, "", Data, 255, CfgFile);
-    Data[254] = 0;
-
-    if (strlen(Data) == 0) {
-        CfgWriteInt(Section, Name, Default);
-        return Default;
-    }
-
-    return atoi(Data);
-}
-
-void CfgReadStr(char *Section, char *Name, char *Data, int DataSize, char *Default)
-{
-    int sl;
-    GetPrivateProfileString(Section, Name, "", Data, DataSize, CfgFile);
-
-    if (strlen(Data) == 0) {
-        sl = (int)strlen(Default);
-        strncpy(Data, Default, sl > 255 ? 255 : sl);
-        CfgWriteStr(Section, Name, Data);
-    }
-}
-
-/*****************************************************************************/
-
-void ReadSettings()
-{
-    char temp[512];
-
-    CfgReadStr("Config", "Source", temp, 511, "-");
-    source_drive = temp[0];
-}
-
-/*****************************************************************************/
-
-void WriteSettings()
-{
-    char temp[2];
-
-    temp[0] = source_drive;
-    temp[1] = 0;
-
-    CfgWriteStr("Config", "Source", temp);
-}
-
-char *path[] = {
-    "A:", "B:", "C:", "D:", "E:", "F:", "G:", "H:", "I:", "J:", "K:", "L:", "M:",
-    "N:", "O:", "P:", "Q:", "R:", "S:", "T:", "U:", "V:", "W:", "X:", "Y:", "Z:",
-};
 
 static INT_PTR CALLBACK ConfigProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-    int wmId, wmEvent;
-    char temp[20] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-
     switch (uMsg) {
         case WM_INITDIALOG: {
-            int n = -1;
-            int s = 0;
-
-            SendMessage(GetDlgItem(hWnd, IDC_DRIVE), CB_RESETCONTENT, 0, 0);
-            for (char d = 'A'; d <= 'Z'; d++) {
-                if (GetDriveType(path[d - 'A']) == DRIVE_CDROM) {
-                    n++;
-
-                    SendMessage(GetDlgItem(hWnd, IDC_DRIVE), CB_ADDSTRING, 0, (LPARAM)path[d - 'A']);
-
-                    if (source_drive == d) {
-                        s = n;
-                    }
-                }
+            std::vector<std::wstring> &drives =
+                *reinterpret_cast<std::vector<std::wstring> *>(lParam);
+            HWND combobox = GetDlgItem(hWnd, IDC_DRIVE);
+            std::wstring drive;
+            g_settings.Get("drive", drive);
+            for (size_t n = 0; n < drives.size(); ++n) {
+                SendMessage(combobox, CB_ADDSTRING, 0,
+                            reinterpret_cast<LPARAM>(drives[n].c_str()));
+                if (drive == drives[n])
+                    SendMessage(combobox, CB_SETCURSEL, n, 0);
             }
-
-            if (n != -1)
-                SendMessage(GetDlgItem(hWnd, IDC_DRIVE), CB_SETCURSEL, s, 0);
-
         } break;
         case WM_COMMAND:
-            wmId = LOWORD(wParam);
-            wmEvent = HIWORD(wParam);
             // Parse the menu selections:
-            switch (wmId) {
-                case IDOK:
-                    if (SendMessage(GetDlgItem(hWnd, IDC_DRIVE), CB_GETCOUNT, 0, 0) > 0) {
-                        GetDlgItemText(hWnd, IDC_DRIVE, temp, 20);
-                        temp[19] = 0;
-                        source_drive = temp[0];
+            switch (LOWORD(wParam)) {
+                case IDOK: {
+                    HWND combobox = GetDlgItem(hWnd, IDC_DRIVE);
+                    LRESULT index = SendMessage(combobox, CB_GETCURSEL, 0, 0);
+                    if (index != CB_ERR) {
+                        LRESULT length = SendMessage(combobox, CB_GETLBTEXTLEN,
+                                                     index, 0);
+                        std::vector<wchar_t> drive(length + 1);
+                        SendMessage(combobox, CB_GETLBTEXT, index,
+                                    reinterpret_cast<LPARAM>(drive.data()));
+                        g_settings.Set("drive", std::wstring(drive.data()));
                         WriteSettings();
                     }
                     EndDialog(hWnd, 0);
-                    break;
+                } break;
                 case IDCANCEL:
                     EndDialog(hWnd, 0);
                     break;
@@ -207,13 +79,48 @@ static INT_PTR CALLBACK ConfigProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     return TRUE;
 }
 
+static std::vector<std::wstring> GetOpticalDriveList()
+{
+    DWORD size = GetLogicalDriveStrings(0, nullptr);
+    std::vector<wchar_t> drive_strings(size);
+    if (GetLogicalDriveStrings(size, drive_strings.data()) != size - 1)
+        return {};
+
+    std::vector<std::wstring> drives;
+    for (auto p = drive_strings.data(); *p; ++p) {
+        if (GetDriveType(p) == DRIVE_CDROM)
+            drives.push_back(p);
+        while (*p)
+            ++p;
+    }
+    return drives;
+}
+
+std::wstring GetValidDrive()
+{
+    std::wstring drive;
+    g_settings.Get("drive", drive);
+    if (drive.empty() || GetDriveType(drive.c_str()) != DRIVE_CDROM) {
+        auto drives = GetOpticalDriveList();
+        if (drives.empty())
+            return {};
+        drive = drives.front();
+    }
+
+    std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
+    printf(" * CDVD: Opening drive '%s'...\n", converter.to_bytes(drive).c_str());
+
+    // The drive string has the form "X:\", but to open the drive, the string
+    // has to be in the form "\\.\X:"
+    drive.pop_back();
+    drive.insert(0, L"\\\\.\\");
+    return drive;
+}
+
 void configure()
 {
     ReadSettings();
-    INT_PTR ret = DialogBoxParam(hinst, MAKEINTRESOURCE(IDD_CONFIG), GetActiveWindow(), ConfigProc, 1);
-    if (ret == -1) {
-        MessageBoxEx(GetActiveWindow(), "Error Opening the config dialog.", "OMG ERROR!", MB_OK, 0);
-        return;
-    }
-    ReadSettings();
+    auto drives = GetOpticalDriveList();
+    DialogBoxParam(s_hinstance, MAKEINTRESOURCE(IDD_CONFIG), GetActiveWindow(),
+                   ConfigProc, reinterpret_cast<LPARAM>(&drives));
 }

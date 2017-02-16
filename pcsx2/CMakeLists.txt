@@ -411,7 +411,8 @@ set(pcsx2ps2Sources
 	ps2/pgif.cpp
 	ps2/LegacyDmac.cpp
 	ps2/Iop/IopHwRead.cpp
-	ps2/Iop/IopHwWrite.cpp)
+	ps2/Iop/IopHwWrite.cpp
+	ps2/Iop/PsxBios.cpp)
 
 # ps2 headers
 set(pcsx2ps2Headers
@@ -679,6 +680,10 @@ foreach(res_file IN ITEMS
         ConfigIcon_Paths ConfigIcon_Plugins ConfigIcon_Speedhacks ConfigIcon_Video Breakpoint_Active Breakpoint_Inactive)
     add_custom_command(OUTPUT  "${res_bin}/${res_file}.h" COMMAND perl ${CMAKE_SOURCE_DIR}/linux_various/hex2h.pl "${res_src}/${res_file}.png" "${res_bin}/${res_file}" )
 endforeach()
+
+if(USE_VTUNE)
+    set(pcsx2FinalLibs ${pcsx2FinalLibs} ${VTUNE_LIBRARIES})
+endif()
 
 # Suppress all the system-specific predefined macros outside the reserved namespace.
 # Needed when stringifying macros.

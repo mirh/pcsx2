@@ -3,7 +3,7 @@
 #-------------------------------------------------------------------------------
 set(msg_dep_common_libs "check these libraries -> wxWidgets (>=2.8.10), aio")
 set(msg_dep_pcsx2       "check these libraries -> wxWidgets (>=2.8.10), gtk2 (>=2.16), zlib (>=1.2.4), pcsx2 common libs")
-set(msg_dep_cdvdiso     "check these libraries -> bzip2 (>=1.0.5), gtk2 (>=2.16)")
+set(msg_dep_cdvdgiga    "check these libraries -> gtk2, libudev")
 set(msg_dep_zerogs      "check these libraries -> glew (>=1.6), opengl, X11, nvidia-cg-toolkit (>=2.1)")
 set(msg_dep_gsdx        "check these libraries -> opengl, png (>=1.2), zlib (>=1.2.4), X11")
 set(msg_dep_onepad      "check these libraries -> sdl (>=1.2), X11, gtk2 (>=2.16)")
@@ -97,28 +97,17 @@ endif()
 #---------------------------------------
 
 #---------------------------------------
-#			CDVDiso
+#			cdvdGigaherz
 #---------------------------------------
-# requires: -BZip2
-#           -gtk2 (linux)
-#---------------------------------------
-if(EXTRA_PLUGINS)
-    if(BZIP2_FOUND AND GTKn_FOUND)
-        set(CDVDiso TRUE)
-    elseif(NOT EXISTS "${CMAKE_SOURCE_DIR}/plugins/CDVDiso")
-        set(CDVDiso FALSE)
-    else()
-        set(CDVDiso FALSE)
-        print_dep("Skip build of CDVDiso: miss some dependencies" "${msg_dep_cdvdiso}")
-    endif()
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/plugins/cdvdGigaherz" OR NOT Linux)
+    set(cdvdGigaherz FALSE)
+elseif(Linux AND GTKn_FOUND AND LIBUDEV_FOUND)
+    set(cdvdGigaherz TRUE)
+else()
+    set(cdvdGigaherz FALSE)
+    print_dep("Skip build of cdvdGigaherz: miss some dependencies" "${msg_dep_cdvdgiga}")
 endif()
-
 #---------------------------------------
-#			CDVDlinuz
-#---------------------------------------
-if(EXTRA_PLUGINS)
-    set(CDVDlinuz TRUE)
-endif()
 
 #---------------------------------------
 #			dev9null
@@ -152,7 +141,7 @@ endif()
 #           -X11
 #           -zlib
 #---------------------------------------
-if(OPENGL_FOUND AND X11_FOUND AND GTKn_FOUND AND ZLIB_FOUND AND PNG_FOUND AND (EGL_FOUND OR NOT EGL_API))
+if(OPENGL_FOUND AND X11_FOUND AND GTKn_FOUND AND ZLIB_FOUND AND PNG_FOUND AND FREETYPE_FOUND AND (EGL_FOUND OR NOT EGL_API))
     set(GSdx TRUE)
 elseif(NOT EXISTS "${CMAKE_SOURCE_DIR}/plugins/GSdx")
     set(GSdx FALSE)
@@ -299,11 +288,10 @@ endif()
 #---------------------------------------
 
 #-------------------------------------------------------------------------------
-#			[TODO] Write CMakeLists.txt for these plugins.
-set(cdvdGigaherz FALSE)
-set(CDVDisoEFP FALSE)
-set(CDVDolio FALSE)
+# Super-seeded by cdvdGigaherz
 set(CDVDpeops FALSE)
+
+# [TODO] Write CMakeLists.txt for these plugins. (or not ;) )
 set(PeopsSPU2 FALSE)
 set(SSSPSXPAD FALSE)
 set(xpad FALSE)

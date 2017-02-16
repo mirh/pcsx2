@@ -206,7 +206,7 @@ protected:
 	bool IsOpaque();
 	bool IsMipMapDraw();
 	bool IsMipMapActive();
-	GIFRegTEX0 GetTex0Layer(int lod);
+	GIFRegTEX0 GetTex0Layer(uint32 lod);
 
 public:
 	GIFPath m_path[4];
@@ -242,6 +242,7 @@ public:
 
 	void ResetHandlers();
 
+	int GetFramebufferHeight();
 	GSVector4i GetDisplayRect(int i = -1);
 	GSVector4i GetFrameRect(int i = -1);
 	GSVideoMode GetVideoMode();

@@ -47,7 +47,7 @@ public:
 	Block block;
 	Pixel pixel;
 
-	uint32* coverages[256]; // texture page coverage based on the texture size. Lazy allocated
+	std::array<uint32*,256> pages_as_bit; // texture page coverage based on the texture size. Lazy allocated
 
 	GSOffset(uint32 bp, uint32 bw, uint32 psm);
 	virtual ~GSOffset();
@@ -55,7 +55,8 @@ public:
 	enum {EOP = 0xffffffff};
 
 	uint32* GetPages(const GSVector4i& rect, uint32* pages = NULL, GSVector4i* bbox = NULL);
-	GSVector4i* GetPagesAsBits(const GSVector4i& rect, GSVector4i* pages = NULL, GSVector4i* bbox = NULL); // free returned value with _aligned_free
+	void* GetPagesAsBits(const GSVector4i& rect, void* pages);
+	uint32* GetPagesAsBits(const GIFRegTEX0& TEX0);
 };
 
 struct GSPixelOffset
@@ -232,9 +233,7 @@ public:
 
 	uint8* BlockPtr(uint32 bp) const
 	{
-		ASSERT(bp < 16384);
-
-		return &m_vm8[bp << 8];
+		return &m_vm8[(bp % MAX_BLOCKS) << 8];
 	}
 
 	uint8* BlockPtr32(int x, int y, uint32 bp, uint32 bw) const
