@@ -332,26 +332,27 @@ namespace GLLoader {
 			fprintf(stderr, "Error: GLLoader failed to get GL version\n");
 			return false;
 		}
-		GLuint v = 1;
-		while (s[v] != '\0' && s[v-1] != ' ') v++;
+
+		// AMD GL_version is made of: <OpenGL version number> <requested context> <DriverVersion>
+		// technically speaking we'd just be interested in the atioglxx/fglrx_dri userspace lib
+		// (whose version is comfortably exposed in the first part of the string above)
+		// Unfortuntately after testing every beta/embeeded/workstation release from November 2015
+		// onward, I found out the same reported build number for both the fixed and buggy "branch"
+		// Threfore check kernel driver (may also be useful, if we wanted to prevent some BSODs)
+#ifdef _WIN32
+		GLfloat v = _strtof_l(strrchr((char*)s, ' '), NULL, _create_locale(LC_NUMERIC, "C"));
+#else
+		GLfloat v = strtof_l(strrchr((char*)s, ' '), NULL, newlocale(LC_NUMERIC, "C", NULL));
+#endif
 
 		const char* vendor = (const char*)glGetString(GL_VENDOR);
 		if (s_first_load)
-			fprintf(stdout, "OpenGL information. GPU: %s. Vendor: %s. Driver: %s\n", glGetString(GL_RENDERER), vendor, &s[v]);
+			fprintf(stdout, "OpenGL information. GPU: %s. Vendor: %s. Driver: %s\n", glGetString(GL_RENDERER), vendor, &s[0]);
 
 		// Name changed but driver is still bad!
 		if (strstr(vendor, "Advanced Micro Devices") || strstr(vendor, "ATI Technologies Inc.") || strstr(vendor, "ATI"))
 			vendor_id_amd = true;
-		/*if (vendor_id_amd && (
-				strstr((const char*)&s[v], " 10.") || // Blacklist all 2010 AMD drivers.
-				strstr((const char*)&s[v], " 11.") || // Blacklist all 2011 AMD drivers.
-				strstr((const char*)&s[v], " 12.") || // Blacklist all 2012 AMD drivers.
-				strstr((const char*)&s[v], " 13.") || // Blacklist all 2013 AMD drivers.
-				strstr((const char*)&s[v], " 14.") || // Blacklist all 2014 AMD drivers.
-				strstr((const char*)&s[v], " 15.") || // Blacklist all 2015 AMD drivers.
-				strstr((const char*)&s[v], " 16.") || // Blacklist all 2016 AMD drivers.
-				strstr((const char*)&s[v], " 17.") // Blacklist all 2017 AMD drivers for now.
-				))
+		/*if (vendor_id_amd && v < 15.3f)
 			amd_legacy_buggy_driver = true;
 		*/
 		if (strstr(vendor, "NVIDIA Corporation"))
